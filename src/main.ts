@@ -11,10 +11,12 @@ import { registerAppRoutes } from './server/routes/app.js';
 import { registerInventoryRoutes } from './server/routes/inventory.js';
 import { registerPricingRoutes } from './server/routes/pricing.js';
 import { registerScanRoutes } from './server/routes/scan.js';
+import { registerListingsRoutes } from './server/routes/listings.js';
 import { registerInventoryApi } from './api/inventory.js';
 import { registerCardsApi } from './api/cards.js';
 import { registerPricingApi } from './api/pricing.js';
 import { registerScanApi } from './api/scan.js';
+import { registerListingsApi } from './api/listings.js';
 
 /** Build the router with all registered routes. */
 export function buildRouter(): Router {
@@ -24,10 +26,12 @@ export function buildRouter(): Router {
   registerInventoryRoutes(router);
   registerPricingRoutes(router);
   registerScanRoutes(router);
+  registerListingsRoutes(router);
   registerInventoryApi(router);
   registerCardsApi(router);
   registerPricingApi(router);
   registerScanApi(router);
+  registerListingsApi(router);
   return router;
 }
 

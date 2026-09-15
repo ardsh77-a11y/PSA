@@ -1,13 +1,26 @@
 import { renderLayout } from '../layout.js';
 import { escapeHtml } from '../../util/html.js';
 import type { UserRecord } from '../../server/router.js';
-import { PRICING_MODES, PRICING_MODE_LABELS, type PricingSettings } from '../../services/settings.js';
+import {
+  PRICING_MODES,
+  PRICING_MODE_LABELS,
+  MARKETPLACES,
+  type PricingSettings,
+  type GenerationSettings,
+} from '../../services/settings.js';
 
 export interface SettingsPageData {
   user: UserRecord;
   settings: PricingSettings;
+  generation: GenerationSettings;
   saved?: boolean;
   error?: string;
+}
+
+function marketplaceOptions(current: string): string {
+  return MARKETPLACES.map(
+    (m) => `<option value="${escapeHtml(m)}"${m === current ? ' selected' : ''}>${escapeHtml(m)}</option>`,
+  ).join('');
 }
 
 function modeOptions(current: string): string {
@@ -98,6 +111,24 @@ export function renderSettingsPage(data: SettingsPageData): string {
       </div>
       <div class="field">
         <label><span>Low-competition weight</span><input type="number" name="weightCompetition" value="${escapeHtml(s.weights.competition)}" min="0" step="0.1" /></label>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="form-section">
+    <legend>Listing generation</legend>
+    <div class="grid-2">
+      <div class="field">
+        <label><span>SKU format</span><input type="text" name="skuFormat" value="${escapeHtml(data.generation.skuFormat)}" /></label>
+        <span class="field-hint">Tokens: {game} {set} {number} {condition} {seq}. Example output: PKM-OBF-125-NM-001.</span>
+      </div>
+      <div class="field">
+        <label><span>Default marketplace</span><select name="defaultMarketplace">${marketplaceOptions(data.generation.defaultMarketplace)}</select></label>
+        <span class="field-hint">New listing drafts target this marketplace.</span>
+      </div>
+      <div class="field">
+        <label><span>Generation pricing mode</span><select name="generationMode">${modeOptions(data.generation.generationMode)}</select></label>
+        <span class="field-hint">Pricing mode used when a listing price is generated.</span>
       </div>
     </div>
   </fieldset>

@@ -479,3 +479,46 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--c
   .scan-tile { grid-template-columns: 72px 1fr; }
   .scan-tile-media .card-thumb { width: 72px; }
 }
+
+/* --- Listings (FEAT-005) ------------------------------------------------ */
+.row-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.col-select { width: 34px; text-align: center; }
+.col-select input { width: 16px; height: 16px; }
+
+.batch-bar {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3);
+  background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: var(--radius-md);
+}
+.batch-bar-count { font-size: var(--fs-sm); color: var(--c-text-soft); font-weight: 600; }
+
+/* eBay-style listing preview */
+.listing-preview { display: grid; grid-template-columns: 320px 1fr; gap: var(--sp-4); align-items: start; }
+.listing-preview-media { text-align: center; }
+.listing-preview-media .card-thumb { width: 100%; max-width: 280px; height: auto; border-radius: var(--radius-md); }
+.listing-photo-note { font-size: var(--fs-xs); margin-top: var(--sp-2); }
+.listing-buy-box {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+  padding: var(--sp-3); margin: var(--sp-3) 0;
+  background: var(--c-surface-2); border-radius: var(--radius-md);
+}
+.listing-price { font-size: var(--fs-xl, 1.5rem); font-weight: 700; color: var(--c-text); }
+.listing-shipping { color: var(--c-text-soft); font-size: var(--fs-sm); }
+
+/* Batch review */
+.batch-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-3); }
+.batch-card {
+  display: grid; grid-template-columns: 34px 72px 1fr auto; gap: var(--sp-3); align-items: center;
+  padding: var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--radius-md); background: var(--c-surface);
+}
+.batch-card[data-status="listed"] { opacity: 0.8; border-color: var(--c-info); }
+.batch-card .card-thumb { width: 64px; height: auto; border-radius: var(--radius-sm); }
+.batch-card-body { min-width: 0; }
+.batch-card-meta { display: flex; gap: var(--sp-3); flex-wrap: wrap; font-size: var(--fs-sm); color: var(--c-text-soft); margin-top: 2px; }
+.batch-card-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: flex-end; }
+
+@media (max-width: 860px) {
+  .listing-preview { grid-template-columns: 1fr; }
+  .batch-card { grid-template-columns: 28px 56px 1fr; }
+  .batch-card-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}

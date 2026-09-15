@@ -8,9 +8,12 @@ import { mockClassificationService } from '../../services/mock/mockClassificatio
 import {
   settingsService,
   PRICING_MODES,
+  MARKETPLACES,
   DEFAULT_PRICING_SETTINGS,
+  DEFAULT_GENERATION_SETTINGS,
   type PricingMode,
   type PricingSettings,
+  type GenerationSettings,
 } from '../../services/settings.js';
 import { renderPricingPage, type PricingRow } from '../../views/pages/pricing.js';
 import { renderSettingsPage } from '../../views/pages/settings.js';
@@ -107,8 +110,9 @@ export function registerPricingRoutes(router: Router): void {
     '/settings',
     requireAuth((ctx) => {
       const settings = settingsService.getPricingSettings(ctx.user!.id);
+      const generation = settingsService.getGenerationSettings(ctx.user!.id);
       const saved = ctx.query.saved === '1';
-      html(ctx.res, 200, renderSettingsPage({ user: ctx.user!, settings, saved }));
+      html(ctx.res, 200, renderSettingsPage({ user: ctx.user!, settings, generation, saved }));
     }),
   );
 
@@ -138,6 +142,20 @@ export function registerPricingRoutes(router: Router): void {
         bulkValueCutoff: num(f.bulkValueCutoff, current.bulkValueCutoff, { min: 0 }),
       };
       settingsService.savePricingSettings(userId, settings);
+
+      const currentGen = settingsService.getGenerationSettings(userId);
+      const gd = DEFAULT_GENERATION_SETTINGS;
+      const marketplace =
+        f.defaultMarketplace && (MARKETPLACES as readonly string[]).includes(f.defaultMarketplace)
+          ? f.defaultMarketplace
+          : currentGen.defaultMarketplace;
+      const generation: GenerationSettings = {
+        skuFormat: (f.skuFormat ?? '').trim() || currentGen.skuFormat || gd.skuFormat,
+        defaultMarketplace: marketplace,
+        generationMode: parseMode(f.generationMode) ?? currentGen.generationMode,
+      };
+      settingsService.saveGenerationSettings(userId, generation);
+
       redirect(ctx.res, '/settings?saved=1');
     }),
   );

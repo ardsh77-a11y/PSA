@@ -31,6 +31,13 @@ export interface GameStrategy {
   readonly label: string;
   /** Build a canonical, human-readable card title. */
   formatCardTitle(card: CardLike): string;
+  /**
+   * Build a search-optimized marketplace listing title (section 17). Unlike
+   * {@link formatCardTitle} (which uses `·` separators for the UI), this returns
+   * a space-separated, buyer-searchable title with NO duplicated keywords, e.g.
+   * `Charizard ex 125/197 Obsidian Flames Ultra Rare Pokemon TCG NM`.
+   */
+  formatListingTitle(card: CardLike, condition?: string | null): string;
   /** Numeric rank for a rarity (higher = rarer). Unknown rarities rank 0. */
   rarityRank(rarity: string | null | undefined): number;
   /** Ordered list of valid condition codes for this game. */
@@ -99,6 +106,40 @@ export const pokemonStrategy: GameStrategy = {
     return parts.filter(Boolean).join(' · ');
   },
 
+  formatListingTitle(card: CardLike, condition?: string | null): string {
+    // Section-17 target:
+    //   Charizard ex 125/197 Obsidian Flames Ultra Rare Pokemon TCG NM
+    // Search-optimized, space separated, and DE-DUPLICATED: no token (word)
+    // is repeated, so we never keyword-stuff.
+    const parts: string[] = [];
+    const push = (value: string | null | undefined) => {
+      if (value && value.trim()) parts.push(value.trim());
+    };
+
+    push(card.name);
+    push(card.number);
+    push(card.set_name ?? card.set_abbreviation);
+    if (card.is_reverse_holo) push('Reverse Holo');
+    else if (card.is_holo) push('Holo');
+    push(card.rarity);
+    push('Pokemon TCG');
+    // Condition code (e.g. NM) is a valuable, searched keyword.
+    push(condition ?? undefined);
+
+    // De-duplicate individual words case-insensitively while preserving order,
+    // so a card named "Pikachu" in the "Pikachu" set never stutters and the
+    // trailing "Pokemon TCG" never repeats a word already in the name.
+    const seen = new Set<string>();
+    const words: string[] = [];
+    for (const word of parts.join(' ').split(/\s+/)) {
+      const key = word.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      words.push(word);
+    }
+    return words.join(' ');
+  },
+
   rarityRank(rarity: string | null | undefined): number {
     if (!rarity) return 0;
     return POKEMON_RARITY_RANK[rarity.trim().toLowerCase()] ?? 0;
@@ -117,6 +158,13 @@ const STRATEGIES: Record<GameId, GameStrategy> = {
 export function strategyFor(game: string | null | undefined): GameStrategy {
   if (game && game in STRATEGIES) return STRATEGIES[game as GameId];
   return pokemonStrategy;
+}
+
+/** Human label for a condition code (e.g. 'NM' -> 'Near Mint'), else the code. */
+export function conditionLabel(code: string | null | undefined, game?: string | null): string {
+  if (!code) return '';
+  const match = strategyFor(game).conditionOptions().find((c) => c.code === code);
+  return match ? match.label : code;
 }
 
 /** Inventory statuses used across the app (section 9). */

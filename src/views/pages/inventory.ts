@@ -88,7 +88,9 @@ function renderRow(row: InventoryRow): string {
     label: row.storage_label,
   });
   const detailHref = `/inventory/${encodeURIComponent(row.id)}`;
-  return `<tr>
+  const canGenerate = Boolean(row.card_id);
+  return `<tr data-inventory-row data-inventory-id="${escapeHtml(row.id)}">
+    <td class="col-select">${canGenerate ? `<input type="checkbox" data-inventory-select value="${escapeHtml(row.id)}" aria-label="Select ${escapeHtml(title)}" />` : ''}</td>
     <td class="col-thumb">${cardThumb(row.card_image_url, title, 'sm')}</td>
     <td class="col-name">
       <a href="${escapeHtml(detailHref)}" class="row-title">${escapeHtml(title)}</a>
@@ -102,7 +104,10 @@ function renderRow(row: InventoryRow): string {
     <td>${statusBadge(row.status, statusTone(row.status))}</td>
     <td class="col-sku">${escapeHtml(row.sku ?? '—')}</td>
     <td>${escapeHtml(location)}</td>
-    <td class="col-actions"><a class="btn btn-ghost btn-sm" href="${escapeHtml(detailHref)}">View</a></td>
+    <td class="col-actions">
+      <a class="btn btn-ghost btn-sm" href="${escapeHtml(detailHref)}">View</a>
+      ${canGenerate ? `<button type="button" class="btn btn-ghost btn-sm" data-generate-listing data-inventory-id="${escapeHtml(row.id)}">Generate listing</button>` : ''}
+    </td>
   </tr>`;
 }
 
@@ -156,6 +161,7 @@ export function renderInventoryPage(data: InventoryPageData): string {
     );
   } else {
     const head = `<tr>
+      <th class="col-select"><input type="checkbox" data-inventory-select-all aria-label="Select all" /></th>
       <th class="col-thumb"></th>
       ${sortHeader('Card', 'name', params)}
       ${sortHeader('Rarity', 'rarity', params)}
@@ -175,7 +181,11 @@ export function renderInventoryPage(data: InventoryPageData): string {
       total: result.total,
       hrefForPage: (p) => `/inventory${buildQuery(params, { page: p })}`,
     });
-    content = `<div class="table-wrap">
+    const batchBar = `<div class="batch-bar" data-batch-bar hidden>
+      <span class="batch-bar-count" data-batch-bar-count>0 selected</span>
+      <button type="button" class="btn btn-primary btn-sm" data-batch-generate>Generate listings</button>
+    </div>`;
+    content = `${batchBar}<div class="table-wrap">
       <table class="data-table inventory-table" data-inventory-table><thead>${head}</thead><tbody>${rowsHtml}</tbody></table>
     </div>
     ${pager}`;

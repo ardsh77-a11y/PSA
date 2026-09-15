@@ -228,7 +228,10 @@ export function renderCardDetailPage(data: CardDetailPageData): string {
       }),
     )}</p>
   </div>
-  <div class="page-actions">${statusBadge(row.status, statusTone(row.status))}</div>
+  <div class="page-actions">
+    ${row.card_id ? `<button type="button" class="btn btn-primary" data-generate-listing data-inventory-id="${escapeHtml(row.id)}">Generate listing</button>` : ''}
+    ${statusBadge(row.status, statusTone(row.status))}
+  </div>
 </section>
 
 <div class="detail-grid" data-card-detail data-inventory-id="${escapeHtml(row.id)}" data-card-id="${escapeHtml(row.card_id ?? '')}">

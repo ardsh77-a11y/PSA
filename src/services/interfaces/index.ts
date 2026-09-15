@@ -32,27 +32,22 @@ export type {
   ClassificationResult,
 } from './classification.js';
 
-export interface GeneratedListing {
-  title: string;
-  description: string;
-  price: number;
-  itemSpecifics: Record<string, string>;
-}
+// The listing-generation seam lives in ./listingGenerator.ts (it carries the
+// full draft shape). Re-exported here so callers can keep importing from
+// services/interfaces.
+export type {
+  ListingGenerator,
+  GeneratedListingDraft,
+  GenerateOptions,
+} from './listingGenerator.js';
 
-/** Generates marketplace-ready listing content. */
-export interface ListingGenerator {
-  generate(inventoryId: string): Promise<GeneratedListing>;
-}
-
-export interface PublishResult {
-  externalId: string;
-  status: 'listed' | 'error';
-}
-
-/** Publishes a listing to a marketplace (mock just marks it Listed). */
-export interface MarketplacePublisher {
-  publish(listingId: string): Promise<PublishResult>;
-}
+// The marketplace-publishing seam lives in ./marketplace.ts. Re-exported here.
+export type {
+  MarketplacePublisher,
+  PublishableListing,
+  PublishResult,
+  UnpublishResult,
+} from './marketplace.js';
 
 /** Answers seller questions / suggests actions (mock returns canned help). */
 export interface SellerAssistant {

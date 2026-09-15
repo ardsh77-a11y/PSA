@@ -58,6 +58,35 @@ export interface PricingSettings {
   bulkValueCutoff: number;
 }
 
+/**
+ * Listing-generation preferences (FEAT-005). These drive the
+ * {@link ListingGenerator} and {@link SkuGenerator}: the SKU format string, the
+ * marketplace a new draft defaults to, and the pricing mode used when a listing
+ * is generated. Persisted alongside pricing settings inside `settings_json`.
+ */
+export interface GenerationSettings {
+  /**
+   * SKU format template. Supported tokens: {game} {set} {number} {condition}
+   * {seq}. Defaults to the section-22 example `{game}-{set}-{number}-{condition}-{seq}`.
+   */
+  skuFormat: string;
+  /** Marketplace a newly generated draft targets (e.g. 'eBay'). */
+  defaultMarketplace: string;
+  /** Pricing mode used when generating listings (defaults to the pricing mode). */
+  generationMode: PricingMode;
+}
+
+/** Marketplaces the mock publisher understands (real ones plug in later). */
+export const MARKETPLACES = ['eBay', 'TCGplayer', 'Whatnot', 'Mercari', 'Shopify'] as const;
+
+export const DEFAULT_SKU_FORMAT = '{game}-{set}-{number}-{condition}-{seq}';
+
+export const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
+  skuFormat: DEFAULT_SKU_FORMAT,
+  defaultMarketplace: 'eBay',
+  generationMode: 'balanced',
+};
+
 /** Sensible defaults (12.9% + $0.30, $1.00 shipping, $0.25 packaging). */
 export const DEFAULT_PRICING_SETTINGS: PricingSettings = {
   pricingMode: 'balanced',
@@ -136,6 +165,66 @@ export function parsePricingSettings(
   };
 }
 
+function str(v: unknown, fallback: string): string {
+  return typeof v === 'string' && v.trim() ? v : fallback;
+}
+
+/**
+ * Merge the `generation` slot of a settings_json blob onto the defaults. Pure
+ * and defensive. `pricingModeColumn` supplies the fallback generation mode when
+ * none is stored, so generation defaults to the user's pricing mode.
+ */
+export function parseGenerationSettings(
+  settingsJson: string | null | undefined,
+  pricingModeColumn?: string | null,
+): GenerationSettings {
+  let blob: Record<string, unknown> = {};
+  if (settingsJson) {
+    try {
+      const parsed = JSON.parse(settingsJson);
+      if (parsed && typeof parsed === 'object') blob = parsed as Record<string, unknown>;
+    } catch {
+      blob = {};
+    }
+  }
+  const gen = (blob.generation && typeof blob.generation === 'object' ? blob.generation : {}) as Record<
+    string,
+    unknown
+  >;
+  const d = DEFAULT_GENERATION_SETTINGS;
+  const mode =
+    toModeFromColumn(typeof gen.generationMode === 'string' ? (gen.generationMode as string) : undefined) ??
+    toModeFromColumn(pricingModeColumn) ??
+    d.generationMode;
+  const marketplace = str(gen.defaultMarketplace, d.defaultMarketplace);
+  return {
+    skuFormat: str(gen.skuFormat, d.skuFormat),
+    defaultMarketplace: (MARKETPLACES as readonly string[]).includes(marketplace)
+      ? marketplace
+      : d.defaultMarketplace,
+    generationMode: mode,
+  };
+}
+
+/** Serialize generation settings into the `generation` slot of a blob. */
+function serializeGenerationSettings(existingJson: string | null | undefined, s: GenerationSettings): string {
+  let blob: Record<string, unknown> = {};
+  if (existingJson) {
+    try {
+      const parsed = JSON.parse(existingJson);
+      if (parsed && typeof parsed === 'object') blob = parsed as Record<string, unknown>;
+    } catch {
+      blob = {};
+    }
+  }
+  blob.generation = {
+    skuFormat: s.skuFormat,
+    defaultMarketplace: s.defaultMarketplace,
+    generationMode: s.generationMode,
+  };
+  return JSON.stringify(blob);
+}
+
 /** Serialize pricing settings into the `pricing` slot of a settings_json blob. */
 function serializePricingSettings(existingJson: string | null | undefined, s: PricingSettings): string {
   let blob: Record<string, unknown> = {};
@@ -189,5 +278,21 @@ export const settingsService = {
   setPricingMode(userId: string, mode: PricingMode): PricingSettings {
     const current = this.getPricingSettings(userId);
     return this.savePricingSettings(userId, { ...current, pricingMode: mode });
+  },
+
+  /** Load a user's listing-generation settings, falling back to defaults. */
+  getGenerationSettings(userId: string): GenerationSettings {
+    const user = userRepository.findById(userId);
+    if (!user) return { ...DEFAULT_GENERATION_SETTINGS };
+    return parseGenerationSettings(user.settings_json, user.pricing_mode);
+  },
+
+  /** Persist a user's listing-generation settings into the settings_json blob. */
+  saveGenerationSettings(userId: string, settings: GenerationSettings): GenerationSettings {
+    const user = userRepository.findById(userId);
+    if (!user) return { ...DEFAULT_GENERATION_SETTINGS };
+    const json = serializeGenerationSettings(user.settings_json, settings);
+    getDb().prepare('UPDATE users SET settings_json = ? WHERE id = ?').run(json, userId);
+    return settings;
   },
 };

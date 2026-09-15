@@ -497,6 +497,230 @@
     }
   }
 
+  // --- Listings: generate from inventory / card detail --------------------
+  function postJson(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body || {}),
+    }).then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); });
+  }
+
+  function initGenerateListing() {
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-generate-listing]');
+      if (!btn) return;
+      var inventoryId = btn.getAttribute('data-inventory-id');
+      if (!inventoryId) return;
+      btn.disabled = true;
+      postJson('/api/listings/generate', { inventoryId: inventoryId }).then(function (r) {
+        if (r.ok && r.data.redirect) {
+          toast('Listing generated', 'success');
+          window.location.href = r.data.redirect;
+        } else {
+          btn.disabled = false;
+          var msg = (r.data && (r.data.error || (r.data.errors && Object.values(r.data.errors)[0]))) || 'Could not generate listing';
+          toast(msg, 'error');
+        }
+      }).catch(function () { btn.disabled = false; toast('Could not generate listing', 'error'); });
+    });
+  }
+
+  // --- Inventory: batch selection + generate listings ---------------------
+  function initInventoryBatch() {
+    var table = document.querySelector('[data-inventory-table]');
+    var bar = document.querySelector('[data-batch-bar]');
+    if (!table || !bar) return;
+    var countEl = bar.querySelector('[data-batch-bar-count]');
+    var selectAll = table.querySelector('[data-inventory-select-all]');
+    var generateBtn = bar.querySelector('[data-batch-generate]');
+
+    function selected() {
+      return Array.prototype.slice.call(table.querySelectorAll('[data-inventory-select]:checked'));
+    }
+    function refresh() {
+      var n = selected().length;
+      if (countEl) countEl.textContent = n + ' selected';
+      bar.hidden = n === 0;
+    }
+
+    table.addEventListener('change', function (e) {
+      if (e.target.matches('[data-inventory-select]')) refresh();
+      if (e.target.matches('[data-inventory-select-all]')) {
+        var checked = e.target.checked;
+        table.querySelectorAll('[data-inventory-select]').forEach(function (cb) { cb.checked = checked; });
+        refresh();
+      }
+    });
+
+    if (generateBtn) {
+      generateBtn.addEventListener('click', function () {
+        var ids = selected().map(function (cb) { return cb.value; });
+        if (!ids.length) return;
+        generateBtn.disabled = true;
+        postJson('/api/listings/batch-generate', { inventoryIds: ids }).then(function (r) {
+          if (r.ok && r.data.redirect) {
+            toast('Generated ' + (r.data.count || 0) + ' draft' + (r.data.count === 1 ? '' : 's'), 'success');
+            window.location.href = r.data.redirect;
+          } else {
+            generateBtn.disabled = false;
+            toast('Batch generate failed', 'error');
+          }
+        }).catch(function () { generateBtn.disabled = false; toast('Batch generate failed', 'error'); });
+      });
+    }
+
+    if (selectAll) { /* handled in change listener */ }
+    refresh();
+  }
+
+  // --- Listings: table row actions (publish / end / return / delete) ------
+  var LISTING_TONE = { listed: 'info', ready: 'warning', sold: 'success', ended: 'neutral', draft: 'neutral' };
+  function listingBadgeHtml(status) {
+    var label = status.charAt(0).toUpperCase() + status.slice(1);
+    return '<span class="badge badge-' + (LISTING_TONE[status] || 'neutral') + '">' + escapeText(label) + '</span>';
+  }
+
+  function initListingActions() {
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-listing-action]');
+      if (!btn) return;
+      var action = btn.getAttribute('data-listing-action');
+      var id = btn.getAttribute('data-listing-id');
+      if (!id) return;
+
+      if (action === 'delete') {
+        btn.disabled = true;
+        fetch('/api/listings/' + encodeURIComponent(id), { method: 'DELETE', headers: { Accept: 'application/json' } })
+          .then(function (res) {
+            if (res.ok) {
+              toast('Deleted', 'success');
+              var row = btn.closest('[data-listing-row], [data-batch-card]');
+              if (row) row.remove();
+            } else { btn.disabled = false; toast('Delete failed', 'error'); }
+          }).catch(function () { btn.disabled = false; toast('Delete failed', 'error'); });
+        return;
+      }
+
+      var url = '/api/listings/' + encodeURIComponent(id) + '/' + action; // publish | end | return
+      btn.disabled = true;
+      fetch(url, { method: 'POST', headers: { Accept: 'application/json' } })
+        .then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+        .then(function (r) {
+          btn.disabled = false;
+          if (!r.ok) { toast((r.data && r.data.error) || 'Action failed', 'error'); return; }
+          var status = r.data.listing && r.data.listing.status;
+          var container = btn.closest('[data-listing-row], [data-batch-card], [data-listing-preview]');
+          if (container && status) {
+            var badge = container.querySelector('[data-listing-status]');
+            if (badge) badge.innerHTML = listingBadgeHtml(status);
+            container.setAttribute('data-status', status);
+          }
+          if (action === 'publish') toast('Published' + (r.data.externalId ? ' (' + r.data.externalId + ')' : ''), 'success');
+          else if (action === 'return') toast('Returned to inventory', 'success');
+          else if (action === 'end') toast('Listing ended', 'success');
+        }).catch(function () { btn.disabled = false; toast('Action failed', 'error'); });
+    });
+  }
+
+  // --- Listing preview: save + publish ------------------------------------
+  function initListingPreview() {
+    var root = document.querySelector('[data-listing-preview]');
+    if (!root) return;
+    var id = root.getAttribute('data-listing-id');
+    var saveBtn = root.querySelector('[data-listing-save]');
+    var publishBtn = root.querySelector('[data-listing-publish]');
+
+    function collect() {
+      var patch = {};
+      root.querySelectorAll('[data-field]').forEach(function (el) {
+        var key = el.getAttribute('data-field');
+        var val = el.value;
+        if (key === 'price' || key === 'shipping_cost') patch[key] = val === '' ? 0 : Number(val);
+        else if (key === 'quantity') patch[key] = val === '' ? 1 : Number(val);
+        else patch[key] = val;
+      });
+      return patch;
+    }
+
+    function save() {
+      return fetch('/api/listings/' + encodeURIComponent(id), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(collect()),
+      }).then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); });
+    }
+
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function () {
+        saveBtn.disabled = true;
+        save().then(function (r) {
+          saveBtn.disabled = false;
+          if (r.ok) toast('Saved', 'success');
+          else toast((r.data && r.data.errors && Object.values(r.data.errors)[0]) || 'Save failed', 'error');
+        }).catch(function () { saveBtn.disabled = false; toast('Save failed', 'error'); });
+      });
+    }
+
+    if (publishBtn) {
+      publishBtn.addEventListener('click', function () {
+        publishBtn.disabled = true;
+        // Save edits first, then publish.
+        save().then(function () {
+          return fetch('/api/listings/' + encodeURIComponent(id) + '/publish', { method: 'POST', headers: { Accept: 'application/json' } });
+        }).then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+          .then(function (r) {
+            if (r.ok) {
+              toast('Published' + (r.data.externalId ? ' (' + r.data.externalId + ')' : ''), 'success');
+              var badge = root.querySelector('[data-listing-status]') || document.querySelector('[data-listing-status]');
+              if (badge && r.data.listing) badge.innerHTML = listingBadgeHtml(r.data.listing.status);
+            } else {
+              publishBtn.disabled = false;
+              toast((r.data && r.data.error) || 'Publish failed', 'error');
+            }
+          }).catch(function () { publishBtn.disabled = false; toast('Publish failed', 'error'); });
+      });
+    }
+  }
+
+  // --- Batch review: select all + publish selected ------------------------
+  function initBatchReview() {
+    var root = document.querySelector('[data-batch-review]');
+    if (!root) return;
+    var selectAllBtn = document.querySelector('[data-batch-select-all]');
+    var publishAllBtn = document.querySelector('[data-batch-publish-all]');
+
+    function checks() { return Array.prototype.slice.call(root.querySelectorAll('[data-batch-check]')); }
+
+    if (selectAllBtn) {
+      selectAllBtn.addEventListener('click', function () {
+        var allChecked = checks().every(function (cb) { return cb.checked; });
+        checks().forEach(function (cb) { cb.checked = !allChecked; });
+      });
+    }
+
+    if (publishAllBtn) {
+      publishAllBtn.addEventListener('click', function () {
+        var ids = checks().filter(function (cb) { return cb.checked; }).map(function (cb) {
+          var card = cb.closest('[data-batch-card]');
+          return card && card.getAttribute('data-listing-id');
+        }).filter(Boolean);
+        if (!ids.length) { toast('Select at least one draft', 'info'); return; }
+        publishAllBtn.disabled = true;
+        postJson('/api/listings/batch-approve', { ids: ids }).then(function (r) {
+          publishAllBtn.disabled = false;
+          if (r.ok) {
+            toast('Published ' + (r.data.count || 0) + ' listing' + (r.data.count === 1 ? '' : 's'), 'success');
+            (r.data.published || []).forEach(function (pid) {
+              var card = root.querySelector('[data-batch-card][data-listing-id="' + pid + '"]');
+              if (card) { var b = card.querySelector('[data-listing-status]'); if (b) b.innerHTML = listingBadgeHtml('listed'); card.setAttribute('data-status', 'listed'); }
+            });
+          } else { toast('Publish failed', 'error'); }
+        }).catch(function () { publishAllBtn.disabled = false; toast('Publish failed', 'error'); });
+      });
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initSidebar();
     initUserMenu();
@@ -506,6 +730,11 @@
     initPricingPanel();
     initScanUploader();
     initScanDetail();
+    initGenerateListing();
+    initInventoryBatch();
+    initListingActions();
+    initListingPreview();
+    initBatchReview();
   });
 
   // Expose helpers for later features.
