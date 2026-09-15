@@ -232,6 +232,271 @@
     if (modeSel) modeSel.addEventListener('change', recompute);
   }
 
+  // --- Scan: upload (drag/drop + file inputs, base64 JSON) ----------------
+  function readFileAsDataUrl(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = function () { reject(reader.error); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function initScanUploader() {
+    var root = document.querySelector('[data-scan-uploader]');
+    if (!root) return;
+    var dropzone = root.querySelector('[data-dropzone]');
+    var fileInput = root.querySelector('[data-file-input]');
+    var cameraInput = root.querySelector('[data-camera-input]');
+    var setHint = root.querySelector('[data-set-hint]');
+    var queue = root.querySelector('[data-scan-queue]');
+
+    function addQueueItem(name, state) {
+      if (!queue) return null;
+      queue.hidden = false;
+      var li = document.createElement('li');
+      li.className = 'scan-queue-item';
+      li.innerHTML = '<span>' + escapeText(name) + '</span><span class="scan-queue-state">' + escapeText(state) + '</span>';
+      queue.appendChild(li);
+      return li;
+    }
+
+    async function uploadFiles(files) {
+      var list = Array.prototype.slice.call(files || []);
+      if (!list.length) return;
+      for (var i = 0; i < list.length; i++) {
+        var file = list[i];
+        var item = addQueueItem(file.name, 'Scanning…');
+        try {
+          var dataUrl = await readFileAsDataUrl(file);
+          var payload = { images: [{ dataUrl: dataUrl, filename: file.name }] };
+          if (setHint && setHint.value) payload.set_id = setHint.value;
+          var res = await fetch('/api/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          var data = await res.json();
+          if (res.ok && data.scan) {
+            var n = (data.results || []).length;
+            if (item) {
+              item.querySelector('.scan-queue-state').innerHTML =
+                'Detected ' + n + ' · <a href="/scan/' + escapeText(data.scan.id) + '">Review</a>';
+            }
+            toast('Detected ' + n + ' card' + (n === 1 ? '' : 's'), 'success');
+          } else {
+            if (item) item.querySelector('.scan-queue-state').textContent = 'Failed';
+            var msg = (data && (data.error || (data.errors && Object.values(data.errors)[0]))) || 'Scan failed';
+            toast(msg, 'error');
+          }
+        } catch (e) {
+          if (item) item.querySelector('.scan-queue-state').textContent = 'Failed';
+          toast('Scan failed', 'error');
+        }
+      }
+      // If we uploaded a single scan and it succeeded, jump straight to review.
+      if (list.length === 1 && queue) {
+        var link = queue.querySelector('.scan-queue-state a');
+        if (link) setTimeout(function () { window.location.href = link.getAttribute('href'); }, 600);
+      }
+    }
+
+    if (fileInput) fileInput.addEventListener('change', function () { uploadFiles(fileInput.files); });
+    if (cameraInput) cameraInput.addEventListener('change', function () { uploadFiles(cameraInput.files); });
+
+    if (dropzone) {
+      ['dragenter', 'dragover'].forEach(function (ev) {
+        dropzone.addEventListener(ev, function (e) { e.preventDefault(); dropzone.classList.add('dragover'); });
+      });
+      ['dragleave', 'drop'].forEach(function (ev) {
+        dropzone.addEventListener(ev, function (e) { e.preventDefault(); dropzone.classList.remove('dragover'); });
+      });
+      dropzone.addEventListener('drop', function (e) {
+        if (e.dataTransfer && e.dataTransfer.files) uploadFiles(e.dataTransfer.files);
+      });
+      dropzone.addEventListener('click', function () { if (fileInput) fileInput.click(); });
+      dropzone.addEventListener('keydown', function (e) {
+        if ((e.key === 'Enter' || e.key === ' ') && fileInput) { e.preventDefault(); fileInput.click(); }
+      });
+    }
+  }
+
+  // --- Scan: detail review + inline correction ----------------------------
+  function initScanDetail() {
+    var root = document.querySelector('[data-scan-detail]');
+    if (!root) return;
+    var scanId = root.getAttribute('data-scan-id');
+
+    function tileFields(tile) {
+      var patch = {};
+      tile.querySelectorAll('[data-field]').forEach(function (el) {
+        patch[el.getAttribute('data-field')] = el.value;
+      });
+      var cardId = tile.querySelector('[data-card-id]');
+      if (cardId && cardId.value) patch.matchedCardId = cardId.value;
+      return patch;
+    }
+
+    function applyResult(tile, result) {
+      if (!result) return;
+      tile.setAttribute('data-status', result.status);
+      var titleEl = tile.querySelector('[data-title]');
+      if (titleEl) titleEl.textContent = result.card_name || result.pokemon_name || 'Unrecognized card';
+      var subEl = tile.querySelector('[data-sub]');
+      if (subEl) subEl.textContent = [result.set_name, result.card_number, result.rarity].filter(Boolean).join(' · ');
+      var badge = tile.querySelector('[data-status-badge]');
+      if (badge) badge.innerHTML = statusBadgeHtml(result.status);
+    }
+
+    function statusBadgeHtml(status) {
+      if (status === 'committed') return '<span class="badge badge-success">In inventory</span>';
+      if (status === 'needs_review') return '<span class="badge badge-warning">Needs Review</span>';
+      if (status === 'confirmed') return '<span class="badge badge-info">Confirmed</span>';
+      return '<span class="badge badge-neutral">' + escapeText(status) + '</span>';
+    }
+
+    function patchResult(tile, patch) {
+      var id = tile.getAttribute('data-result-id');
+      return fetch('/api/scan-result/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(patch),
+      }).then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); });
+    }
+
+    function lockTile(tile) {
+      tile.querySelectorAll('input, select, button').forEach(function (el) { el.disabled = true; });
+    }
+
+    // Per-tile card picker (re-match).
+    root.querySelectorAll('[data-card-picker]').forEach(function (picker) {
+      wireCardPicker(picker);
+    });
+
+    root.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      var action = btn.getAttribute('data-action');
+
+      if (action === 'confirm-all' || action === 'commit-all') {
+        var url = action === 'confirm-all'
+          ? null
+          : '/api/scan/' + encodeURIComponent(scanId) + '/commit-all';
+        if (action === 'confirm-all') {
+          // Confirm every needs_review tile client-side via PATCH.
+          var pending = root.querySelectorAll('[data-scan-result][data-status="needs_review"]');
+          pending.forEach(function (tile) {
+            patchResult(tile, { status: 'confirmed' }).then(function (r) { if (r.ok) applyResult(tile, r.data.result); });
+          });
+          toast('Confirmed pending detections', 'success');
+          return;
+        }
+        fetch(url, { method: 'POST', headers: { Accept: 'application/json' } })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            toast('Added ' + (data.committed || 0) + ' to inventory' + (data.skipped ? ' (' + data.skipped + ' skipped)' : ''), 'success');
+            setTimeout(function () { window.location.reload(); }, 700);
+          }).catch(function () { toast('Commit failed', 'error'); });
+        return;
+      }
+
+      var tile = btn.closest('[data-scan-result]');
+      if (!tile) return;
+
+      if (action === 'save') {
+        patchResult(tile, tileFields(tile)).then(function (r) {
+          if (r.ok) { applyResult(tile, r.data.result); toast('Saved', 'success'); }
+          else toast('Save failed', 'error');
+        });
+      } else if (action === 'confirm') {
+        var p = tileFields(tile); p.status = 'confirmed';
+        patchResult(tile, p).then(function (r) {
+          if (r.ok) { applyResult(tile, r.data.result); toast('Confirmed', 'success'); }
+          else toast('Failed', 'error');
+        });
+      } else if (action === 'commit') {
+        // Save edits first, then commit.
+        patchResult(tile, tileFields(tile)).then(function () {
+          var id = tile.getAttribute('data-result-id');
+          return fetch('/api/scan-result/' + encodeURIComponent(id) + '/commit', {
+            method: 'POST', headers: { Accept: 'application/json' },
+          });
+        }).then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+          .then(function (r) {
+            if (r.ok) { tile.setAttribute('data-status', 'committed'); var b = tile.querySelector('[data-status-badge]'); if (b) b.innerHTML = statusBadgeHtml('committed'); lockTile(tile); toast('Added to inventory', 'success'); }
+            else toast((r.data && r.data.error) || 'Commit failed', 'error');
+          }).catch(function () { toast('Commit failed', 'error'); });
+      } else if (action === 'delete') {
+        var id = tile.getAttribute('data-result-id');
+        fetch('/api/scan-result/' + encodeURIComponent(id), { method: 'DELETE', headers: { Accept: 'application/json' } })
+          .then(function (res) { if (res.ok) { tile.remove(); toast('Deleted', 'success'); } else toast('Delete failed', 'error'); });
+      } else if (action === 'split') {
+        // Split: duplicate the detection as a new scan result via PATCH clone.
+        splitTile(tile);
+      }
+    });
+
+    // Merge: when two tiles are selected, offer to merge the second into first.
+    root.addEventListener('change', function (e) {
+      if (!e.target.matches('[data-select]')) return;
+      var selected = root.querySelectorAll('[data-select]:checked');
+      if (selected.length >= 2) {
+        var tiles = Array.prototype.map.call(selected, function (cb) { return cb.closest('[data-scan-result]'); });
+        mergeTiles(tiles[0], tiles[1]);
+        selected.forEach(function (cb) { cb.checked = false; });
+      }
+    });
+
+    function mergeTiles(keep, drop) {
+      // Merging = delete the duplicate detection, keep the first.
+      var dropId = drop.getAttribute('data-result-id');
+      fetch('/api/scan-result/' + encodeURIComponent(dropId), { method: 'DELETE', headers: { Accept: 'application/json' } })
+        .then(function (res) { if (res.ok) { drop.remove(); toast('Merged detections', 'success'); } else toast('Merge failed', 'error'); });
+    }
+
+    function splitTile(tile) {
+      // Split = ask the server to run a fresh recognition producing a sibling.
+      // Lightweight client-side approach: clone the tile's current fields into a
+      // brand-new scan result is not supported by the API alone, so we inform
+      // the user and reload to keep behavior honest.
+      toast('To split a stack, upload each card separately, or delete and re-scan.', 'info');
+      void tile;
+    }
+
+    function wireCardPicker(picker) {
+      var search = picker.querySelector('[data-card-search]');
+      var results = picker.querySelector('[data-card-results]');
+      var hidden = picker.querySelector('[data-card-id]');
+      if (!search || !results || !hidden) return;
+      var timer = null;
+      function hide() { results.hidden = true; results.innerHTML = ''; }
+      search.addEventListener('input', function () {
+        var q = search.value.trim();
+        if (timer) clearTimeout(timer);
+        if (q.length < 2) { hide(); return; }
+        timer = setTimeout(function () {
+          apiGet('/api/cards?q=' + encodeURIComponent(q)).then(function (data) {
+            results.innerHTML = '';
+            if (!data.rows || !data.rows.length) { hide(); return; }
+            data.rows.forEach(function (row) {
+              var li = document.createElement('li');
+              var sub = [row.set_name, row.number, row.rarity].filter(Boolean).join(' · ');
+              li.innerHTML = '<div>' + escapeText(row.name) + '</div><div class="pick-sub">' + escapeText(sub) + '</div>';
+              li.addEventListener('click', function () {
+                hidden.value = row.id;
+                search.value = row.name;
+                hide();
+              });
+              results.appendChild(li);
+            });
+            results.hidden = false;
+          }).catch(hide);
+        }, 200);
+      });
+      document.addEventListener('click', function (e) { if (!picker.contains(e.target)) hide(); });
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initSidebar();
     initUserMenu();
@@ -239,6 +504,8 @@
     initCardPicker();
     initCardDetail();
     initPricingPanel();
+    initScanUploader();
+    initScanDetail();
   });
 
   // Expose helpers for later features.

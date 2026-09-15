@@ -47,13 +47,25 @@ declare const URL: {
 interface BufferConstructor {
   from(data: string, encoding?: string): Buffer;
   from(data: ArrayBuffer | Uint8Array | number[]): Buffer;
-  concat(list: Uint8Array[]): Buffer;
+  concat(list: Buffer[]): Buffer;
   alloc(size: number): Buffer;
   isBuffer(obj: unknown): boolean;
+  byteLength(str: string, encoding?: string): number;
 }
-interface Buffer extends Uint8Array {
-  toString(encoding?: string): string;
+/**
+ * A minimal Buffer shape. Intentionally NOT declared `extends Uint8Array` so we
+ * do not inherit the DOM lib's `Uint8Array<ArrayBufferLike>` generic (which
+ * conflicts with our loose method overrides). We declare exactly the members
+ * PokeOps uses plus index access.
+ */
+interface Buffer {
+  [index: number]: number;
   readonly length: number;
+  toString(encoding?: string, start?: number, end?: number): string;
+  subarray(start?: number, end?: number): Buffer;
+  slice(start?: number, end?: number): Buffer;
+  indexOf(value: string | Buffer | number, byteOffset?: number, encoding?: string): number;
+  equals(other: Buffer): boolean;
 }
 declare const Buffer: BufferConstructor;
 
@@ -81,7 +93,7 @@ declare module 'node:crypto' {
     salt: string | Buffer,
     keylen: number,
   ): Buffer;
-  export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean;
+  export function timingSafeEqual(a: Buffer, b: Buffer): boolean;
   export function createHash(algorithm: string): {
     update(data: string | Buffer): { digest(encoding: string): string };
     digest(encoding: string): string;

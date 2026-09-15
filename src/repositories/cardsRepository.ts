@@ -131,6 +131,22 @@ export const cardsRepository = {
     return this.getById(input.id)!;
   },
 
+  /**
+   * Candidate cards for the mock recognizer to sample from. Cards that have at
+   * least one price snapshot are returned first (they make richer demos), then
+   * the rest. Ordering is stable (by id) so a seeded picker is deterministic.
+   * `limit` caps the pool size.
+   */
+  sampleCandidates(limit = 200): CardWithSet[] {
+    return getDb()
+      .prepare(
+        `${CARD_WITH_SET_SELECT}
+         ORDER BY (SELECT COUNT(*) FROM price_snapshots ps WHERE ps.card_id = c.id) DESC, c.id ASC
+         LIMIT ?`,
+      )
+      .all(limit) as CardWithSet[];
+  },
+
   /** Distinct rarity values present in the catalog (for filter dropdowns). */
   distinctRarities(): string[] {
     const rows = getDb()

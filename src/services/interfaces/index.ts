@@ -7,25 +7,14 @@
  * the seams so those implementations slot in without touching callers.
  */
 
-export interface RecognizedCard {
-  pokemonName?: string;
-  cardName?: string;
-  setName?: string;
-  setAbbreviation?: string;
-  cardNumber?: string;
-  rarity?: string;
-  cardType?: string;
-  language?: string;
-  isHolo?: boolean;
-  isReverseHolo?: boolean;
-  estimatedCondition?: string;
-  confidence: number;
-}
-
-/** Identifies cards from an uploaded image (mock keys off filename/seed). */
-export interface Recognizer {
-  recognize(imageRef: string): Promise<RecognizedCard[]>;
-}
+// The recognition seam lives in ./recognizer.ts (it carries a richer input +
+// result shape). Re-exported here so callers can keep importing from
+// services/interfaces.
+export type {
+  Recognizer,
+  RecognitionResult,
+  RecognizeInput,
+} from './recognizer.js';
 
 // The pricing + single-vs-bulk classification seams live in their own modules
 // (they carry richer types driven by user settings). Re-exported here so
