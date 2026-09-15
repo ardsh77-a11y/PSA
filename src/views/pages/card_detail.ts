@@ -106,6 +106,23 @@ function conditionSelect(current: string): string {
   return `<select data-price-condition aria-label="Condition for pricing">${opts}</select>`;
 }
 
+/** Storage-location assignment dropdown (section 21). Assigns on change. */
+function storageSelect(
+  locations: StorageLocation[],
+  current: string | null,
+  inventoryId: string,
+): string {
+  const options = [`<option value=""${current ? '' : ' selected'}>Unassigned</option>`]
+    .concat(
+      locations.map(
+        (l) =>
+          `<option value="${escapeHtml(l.id)}"${l.id === current ? ' selected' : ''}>${escapeHtml(describeLocation(l))}</option>`,
+      ),
+    )
+    .join('');
+  return `<select data-storage-assign data-inventory-id="${escapeHtml(inventoryId)}" aria-label="Storage location">${options}</select>`;
+}
+
 function modeSelect(current: PricingMode): string {
   const opts = PRICING_MODES.map(
     (m) => `<option value="${escapeHtml(m)}"${m === current ? ' selected' : ''}>${escapeHtml(PRICING_MODE_LABELS[m])}</option>`,
@@ -249,6 +266,7 @@ export function renderCardDetailPage(data: CardDetailPageData): string {
     <div class="detail-actions">
       <label class="inline-field"><span>Status</span>${statusSelect(row.status)}</label>
       <label class="inline-field"><span>Target price</span><input type="number" data-target-price value="${escapeHtml(row.target_price ?? '')}" min="0" step="0.01" placeholder="—" /></label>
+      <label class="inline-field"><span>Storage</span>${storageSelect(data.storageLocations, row.storage_location_id, row.id)}</label>
       <button type="button" class="btn btn-primary btn-sm" data-save-detail>Save changes</button>
     </div>
 

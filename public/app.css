@@ -522,3 +522,29 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--c
   .batch-card { grid-template-columns: 28px 56px 1fr; }
   .batch-card-actions { grid-column: 1 / -1; justify-content: flex-start; }
 }
+
+/* ==========================================================================
+   Bulk section (FEAT-006)
+   ========================================================================== */
+.bulk-summary-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-3); margin-bottom: var(--sp-3);
+}
+.bulk-summary-card {
+  text-align: left; cursor: pointer; background: var(--c-surface);
+  border: 1px solid var(--c-border); border-radius: var(--radius-md);
+  padding: var(--sp-3); transition: border-color 0.15s, box-shadow 0.15s;
+}
+.bulk-summary-card:hover { border-color: var(--c-blue); box-shadow: 0 0 0 3px var(--c-blue-soft); }
+.bulk-summary-label { font-size: var(--fs-xs); color: var(--c-text-soft); text-transform: uppercase; letter-spacing: 0.03em; }
+.bulk-summary-count { font-size: var(--fs-xl); font-weight: 700; color: var(--c-text); margin: 2px 0; }
+.bulk-summary-value { font-size: var(--fs-sm); color: var(--c-text-faint); }
+
+.bulk-config { margin: var(--sp-3) 0; }
+.bulk-config summary { cursor: pointer; font-size: var(--fs-sm); color: var(--c-blue); }
+.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--sp-2) var(--sp-3); margin: var(--sp-3) 0; }
+.check-inline { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
+.check-inline input { margin: 0; width: auto; }
+
+.bulk-proposal { display: flex; flex-direction: column; gap: var(--sp-3); }
+.bulk-guarantees { display: flex; flex-direction: column; gap: var(--sp-3); }

@@ -167,24 +167,6 @@ export function registerInventoryRoutes(router: Router): void {
     }),
   );
 
-  // Bulk view (placeholder until FEAT-005: filtered inventory view)
-  router.get(
-    '/bulk',
-    requireAuth((ctx) => {
-      const data = listPageData(ctx, { classification: ctx.query.classification || 'bulk' });
-      html(
-        ctx.res,
-        200,
-        renderInventoryPage({
-          ...data,
-          heading: 'Bulk',
-          subtitle: 'Bulk lot tooling arrives soon; showing bulk-classified inventory for now.',
-          activeNav: 'bulk',
-        }),
-      );
-    }),
-  );
-
   // Card detail (MUST be registered after /inventory/new so that literal wins)
   router.get(
     '/inventory/:id',

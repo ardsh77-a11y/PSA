@@ -76,6 +76,87 @@ export interface GenerationSettings {
   generationMode: PricingMode;
 }
 
+/**
+ * Bulk-management preferences (FEAT-006, sections 11, 12, 14). These drive the
+ * {@link ../services/bulkService.ts} and {@link ../services/bulkListingGenerator.ts}:
+ * which bulk categories are surfaced on the Bulk page, the default lot sizes
+ * the lot generator packs into, the per-card bulk rate used for suggested
+ * pricing, and the default guarantees applied to a generated bulk listing.
+ * Persisted alongside pricing/generation settings inside `settings_json`.
+ */
+
+/** The canonical bulk categories (section 11). Order is intentional. */
+export const BULK_CATEGORIES = [
+  'commons',
+  'uncommons',
+  'regular_rares',
+  'holos',
+  'reverse_holos',
+  'energy',
+  'mixed_bulk',
+  'playable_bulk',
+] as const;
+
+export type BulkCategory = (typeof BULK_CATEGORIES)[number];
+
+/** Human labels for each bulk category. */
+export const BULK_CATEGORY_LABELS: Record<BulkCategory, string> = {
+  commons: 'Commons',
+  uncommons: 'Uncommons',
+  regular_rares: 'Regular Rares',
+  holos: 'Holos',
+  reverse_holos: 'Reverse Holos',
+  energy: 'Energy',
+  mixed_bulk: 'Mixed Bulk',
+  playable_bulk: 'Playable Bulk',
+};
+
+/** The lot guarantees a seller can attach to a bulk lot (section 14). */
+export interface BulkGuarantees {
+  /** Minimum number of rares guaranteed in the lot (0 = none). */
+  minRares: number;
+  /** Minimum number of holos guaranteed in the lot (0 = none). */
+  minHolos: number;
+  /** No energy cards included. */
+  noEnergy: boolean;
+  /** English cards only. */
+  englishOnly: boolean;
+  /** No damaged cards. */
+  noDamaged: boolean;
+  /** No duplicate cards. */
+  noDuplicates: boolean;
+  /** Cards drawn from a mix of sets. */
+  mixedSets: boolean;
+}
+
+export interface BulkSettings {
+  /** Which categories are surfaced/summarized on the Bulk page. */
+  includedCategories: BulkCategory[];
+  /** Default lot sizes the generator packs bulk into (section 12). */
+  defaultLotSizes: number[];
+  /** Per-card bulk rate (dollars) used to suggest a lot price. */
+  perCardRate: number;
+  /** Default guarantees applied when generating a lot listing. */
+  guarantees: BulkGuarantees;
+}
+
+export const DEFAULT_BULK_GUARANTEES: BulkGuarantees = {
+  minRares: 0,
+  minHolos: 0,
+  noEnergy: false,
+  englishOnly: true,
+  noDamaged: true,
+  noDuplicates: false,
+  mixedSets: false,
+};
+
+export const DEFAULT_BULK_SETTINGS: BulkSettings = {
+  includedCategories: [...BULK_CATEGORIES],
+  defaultLotSizes: [100, 250, 500],
+  perCardRate: 0.03,
+  guarantees: { ...DEFAULT_BULK_GUARANTEES },
+};
+
 /** Marketplaces the mock publisher understands (real ones plug in later). */
 export const MARKETPLACES = ['eBay', 'TCGplayer', 'Whatnot', 'Mercari', 'Shopify'] as const;
 
@@ -206,6 +287,96 @@ export function parseGenerationSettings(
   };
 }
 
+function bool(v: unknown, fallback: boolean): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v !== 0;
+  if (typeof v === 'string') {
+    const t = v.trim().toLowerCase();
+    if (t === 'true' || t === '1' || t === 'on' || t === 'yes') return true;
+    if (t === 'false' || t === '0' || t === 'off' || t === 'no' || t === '') return false;
+  }
+  return fallback;
+}
+
+/**
+ * Merge the `bulk` slot of a settings_json blob onto the defaults. Pure and
+ * defensive: unknown categories are dropped, malformed lot sizes fall back to
+ * the default, and guarantee flags are coerced. Exported for testing.
+ */
+export function parseBulkSettings(settingsJson: string | null | undefined): BulkSettings {
+  let blob: Record<string, unknown> = {};
+  if (settingsJson) {
+    try {
+      const parsed = JSON.parse(settingsJson);
+      if (parsed && typeof parsed === 'object') blob = parsed as Record<string, unknown>;
+    } catch {
+      blob = {};
+    }
+  }
+  const bulk = (blob.bulk && typeof blob.bulk === 'object' ? blob.bulk : {}) as Record<string, unknown>;
+  const d = DEFAULT_BULK_SETTINGS;
+
+  let includedCategories: BulkCategory[] = [...d.includedCategories];
+  if (Array.isArray(bulk.includedCategories)) {
+    const filtered = bulk.includedCategories
+      .map((c) => String(c))
+      .filter((c): c is BulkCategory => (BULK_CATEGORIES as readonly string[]).includes(c));
+    // Preserve canonical order regardless of stored order.
+    includedCategories = BULK_CATEGORIES.filter((c) => filtered.includes(c));
+  }
+
+  let defaultLotSizes = [...d.defaultLotSizes];
+  if (Array.isArray(bulk.defaultLotSizes)) {
+    const sizes = bulk.defaultLotSizes
+      .map((n) => Math.floor(Number(n)))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (sizes.length > 0) {
+      // Descending, de-duplicated so the greedy packer prefers larger lots.
+      defaultLotSizes = Array.from(new Set(sizes)).sort((a, b) => b - a);
+    }
+  }
+
+  const guaranteesRaw = (bulk.guarantees && typeof bulk.guarantees === 'object'
+    ? bulk.guarantees
+    : {}) as Record<string, unknown>;
+  const g = d.guarantees;
+
+  return {
+    includedCategories,
+    defaultLotSizes,
+    perCardRate: num(bulk.perCardRate, d.perCardRate),
+    guarantees: {
+      minRares: Math.max(0, Math.floor(num(guaranteesRaw.minRares, g.minRares))),
+      minHolos: Math.max(0, Math.floor(num(guaranteesRaw.minHolos, g.minHolos))),
+      noEnergy: bool(guaranteesRaw.noEnergy, g.noEnergy),
+      englishOnly: bool(guaranteesRaw.englishOnly, g.englishOnly),
+      noDamaged: bool(guaranteesRaw.noDamaged, g.noDamaged),
+      noDuplicates: bool(guaranteesRaw.noDuplicates, g.noDuplicates),
+      mixedSets: bool(guaranteesRaw.mixedSets, g.mixedSets),
+    },
+  };
+}
+
+/** Serialize bulk settings into the `bulk` slot of a settings_json blob. */
+function serializeBulkSettings(existingJson: string | null | undefined, s: BulkSettings): string {
+  let blob: Record<string, unknown> = {};
+  if (existingJson) {
+    try {
+      const parsed = JSON.parse(existingJson);
+      if (parsed && typeof parsed === 'object') blob = parsed as Record<string, unknown>;
+    } catch {
+      blob = {};
+    }
+  }
+  blob.bulk = {
+    includedCategories: s.includedCategories,
+    defaultLotSizes: s.defaultLotSizes,
+    perCardRate: s.perCardRate,
+    guarantees: { ...s.guarantees },
+  };
+  return JSON.stringify(blob);
+}
+
 /** Serialize generation settings into the `generation` slot of a blob. */
 function serializeGenerationSettings(existingJson: string | null | undefined, s: GenerationSettings): string {
   let blob: Record<string, unknown> = {};
@@ -294,5 +465,34 @@ export const settingsService = {
     const json = serializeGenerationSettings(user.settings_json, settings);
     getDb().prepare('UPDATE users SET settings_json = ? WHERE id = ?').run(json, userId);
     return settings;
+  },
+
+  /** Load a user's bulk-management settings, falling back to defaults. */
+  getBulkSettings(userId: string): BulkSettings {
+    const user = userRepository.findById(userId);
+    if (!user) return { ...DEFAULT_BULK_SETTINGS, guarantees: { ...DEFAULT_BULK_GUARANTEES } };
+    return parseBulkSettings(user.settings_json);
+  },
+
+  /** Persist a user's bulk-management settings into the settings_json blob. */
+  saveBulkSettings(userId: string, settings: BulkSettings): BulkSettings {
+    const user = userRepository.findById(userId);
+    if (!user) return { ...DEFAULT_BULK_SETTINGS, guarantees: { ...DEFAULT_BULK_GUARANTEES } };
+    const json = serializeBulkSettings(user.settings_json, settings);
+    getDb().prepare('UPDATE users SET settings_json = ? WHERE id = ?').run(json, userId);
+    return settings;
+  },
+
+  /** Update just which bulk categories are included (used by the config control). */
+  setIncludedCategories(userId: string, categories: BulkCategory[]): BulkSettings {
+    const current = this.getBulkSettings(userId);
+    const included = BULK_CATEGORIES.filter((c) => categories.includes(c));
+    return this.saveBulkSettings(userId, { ...current, includedCategories: included });
+  },
+
+  /** Update just the default guarantees for generated bulk lots. */
+  setBulkGuarantees(userId: string, guarantees: BulkGuarantees): BulkSettings {
+    const current = this.getBulkSettings(userId);
+    return this.saveBulkSettings(userId, { ...current, guarantees });
   },
 };

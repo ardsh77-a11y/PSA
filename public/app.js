@@ -721,6 +721,195 @@
     }
   }
 
+  // --- Bulk: category summaries, lot proposal, commit, listing gen --------
+  function initBulk() {
+    var root = document.querySelector('[data-bulk-page]');
+    if (!root) return;
+    var proposal = document.querySelector('[data-bulk-proposal]');
+    var currentCategory = null;
+
+    function fmt(v) {
+      return (v === null || v === undefined || isNaN(v)) ? '—' : '$' + Number(v).toFixed(2);
+    }
+
+    function parseSizes() {
+      var input = proposal && proposal.querySelector('[data-lot-sizes]');
+      if (!input) return null;
+      var sizes = input.value.split(',').map(function (s) { return parseInt(s.trim(), 10); })
+        .filter(function (n) { return !isNaN(n) && n > 0; });
+      return sizes.length ? sizes : null;
+    }
+
+    function renderProposal(plan) {
+      if (!proposal) return;
+      proposal.hidden = false;
+      var cat = proposal.querySelector('[data-proposal-category]');
+      if (cat) cat.textContent = '· ' + plan.label;
+      var summary = proposal.querySelector('[data-proposal-summary]');
+      if (summary) {
+        summary.textContent = plan.available.toLocaleString() + ' available · ' +
+          plan.allocated.toLocaleString() + ' packed into ' + plan.lots.length + ' lot' +
+          (plan.lots.length === 1 ? '' : 's') + ' · ' + plan.remainder.toLocaleString() + ' left over';
+      }
+      var tbody = proposal.querySelector('[data-proposal-rows]');
+      if (tbody) {
+        tbody.innerHTML = '';
+        plan.lots.forEach(function (lot, i) {
+          var tr = document.createElement('tr');
+          tr.innerHTML = '<td>Lot ' + (i + 1) + '</td><td class="num" data-lot-count>' +
+            lot.cardCount.toLocaleString() + '</td><td class="num">' + fmt(lot.suggestedPrice) + '</td>';
+          tbody.appendChild(tr);
+        });
+        if (!plan.lots.length) {
+          tbody.innerHTML = '<tr><td colspan="3" class="muted">Not enough cards for a full lot at these sizes.</td></tr>';
+        }
+      }
+    }
+
+    function generate() {
+      if (!currentCategory) return;
+      postJson('/api/bulk/generate-lots', { category: currentCategory, lotSizes: parseSizes() || undefined })
+        .then(function (r) {
+          if (r.ok && r.data.plan) renderProposal(r.data.plan);
+          else toast('Could not generate lots', 'error');
+        }).catch(function () { toast('Could not generate lots', 'error'); });
+    }
+
+    root.addEventListener('click', function (e) {
+      var card = e.target.closest('[data-bulk-category]');
+      if (!card) return;
+      currentCategory = card.getAttribute('data-bulk-category');
+      generate();
+      if (proposal) proposal.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+
+    if (proposal) {
+      var reBtn = proposal.querySelector('[data-reproposal]');
+      if (reBtn) reBtn.addEventListener('click', generate);
+      var cancelBtn = proposal.querySelector('[data-cancel-proposal]');
+      if (cancelBtn) cancelBtn.addEventListener('click', function () { proposal.hidden = true; });
+      var commitBtn = proposal.querySelector('[data-commit-lots]');
+      if (commitBtn) commitBtn.addEventListener('click', function () {
+        if (!currentCategory) return;
+        var counts = Array.prototype.map.call(proposal.querySelectorAll('[data-lot-count]'), function (td) {
+          return parseInt(td.textContent.replace(/[^0-9]/g, ''), 10);
+        }).filter(function (n) { return !isNaN(n) && n > 0; });
+        if (!counts.length) { toast('No lots to commit', 'info'); return; }
+        commitBtn.disabled = true;
+        postJson('/api/bulk/lots', { category: currentCategory, lots: counts.map(function (c) { return { cardCount: c }; }) })
+          .then(function (r) {
+            commitBtn.disabled = false;
+            if (r.ok) { toast('Committed ' + (r.data.count || 0) + ' lots', 'success'); setTimeout(function () { window.location.reload(); }, 600); }
+            else toast((r.data && r.data.error) || 'Commit failed', 'error');
+          }).catch(function () { commitBtn.disabled = false; toast('Commit failed', 'error'); });
+      });
+    }
+
+    // Categories config form.
+    var catForm = document.querySelector('[data-bulk-categories-form]');
+    if (catForm) catForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var cats = Array.prototype.map.call(catForm.querySelectorAll('input[name="categories"]:checked'), function (cb) { return cb.value; });
+      postJson('/api/bulk/categories', { categories: cats }).then(function (r) {
+        if (r.ok) { toast('Categories saved', 'success'); setTimeout(function () { window.location.reload(); }, 500); }
+        else toast('Save failed', 'error');
+      }).catch(function () { toast('Save failed', 'error'); });
+    });
+
+    // Guarantees config form.
+    var gForm = document.querySelector('[data-bulk-guarantees-form]');
+    if (gForm) gForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var g = {
+        minRares: Number(gForm.minRares.value) || 0,
+        minHolos: Number(gForm.minHolos.value) || 0,
+        noEnergy: gForm.noEnergy.checked,
+        englishOnly: gForm.englishOnly.checked,
+        noDamaged: gForm.noDamaged.checked,
+        noDuplicates: gForm.noDuplicates.checked,
+        mixedSets: gForm.mixedSets.checked,
+      };
+      postJson('/api/bulk/guarantees', { guarantees: g }).then(function (r) {
+        if (r.ok) toast('Guarantees saved', 'success');
+        else toast('Save failed', 'error');
+      }).catch(function () { toast('Save failed', 'error'); });
+    });
+
+    // Per-lot actions.
+    document.addEventListener('click', function (e) {
+      var gen = e.target.closest('[data-bulk-generate-listing]');
+      if (gen) {
+        var lotId = gen.getAttribute('data-lot-id');
+        gen.disabled = true;
+        postJson('/api/bulk/lots/' + encodeURIComponent(lotId) + '/listing', {}).then(function (r) {
+          if (r.ok && r.data.redirect) { toast('Listing generated', 'success'); window.location.href = r.data.redirect; }
+          else { gen.disabled = false; toast((r.data && r.data.error) || 'Generate failed', 'error'); }
+        }).catch(function () { gen.disabled = false; toast('Generate failed', 'error'); });
+        return;
+      }
+      var del = e.target.closest('[data-bulk-delete-lot]');
+      if (del) {
+        var id = del.getAttribute('data-lot-id');
+        del.disabled = true;
+        fetch('/api/bulk/lots/' + encodeURIComponent(id), { method: 'DELETE', headers: { Accept: 'application/json' } })
+          .then(function (res) {
+            if (res.ok) { toast('Lot deleted', 'success'); var row = del.closest('[data-bulk-lot-row]'); if (row) row.remove(); }
+            else { del.disabled = false; toast('Delete failed', 'error'); }
+          }).catch(function () { del.disabled = false; toast('Delete failed', 'error'); });
+      }
+    });
+  }
+
+  // --- Storage: create + delete locations ---------------------------------
+  function initStorage() {
+    var root = document.querySelector('[data-storage-page]');
+    var createForm = document.querySelector('[data-storage-create-form]');
+    if (!root && !createForm) return;
+
+    if (createForm) createForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var body = {
+        box: createForm.box.value, shelf: createForm.shelf.value,
+        slot: createForm.slot.value, label: createForm.label.value,
+      };
+      postJson('/api/storage', body).then(function (r) {
+        if (r.ok) { toast('Location added', 'success'); setTimeout(function () { window.location.reload(); }, 500); }
+        else toast((r.data && r.data.errors && Object.values(r.data.errors)[0]) || 'Add failed', 'error');
+      }).catch(function () { toast('Add failed', 'error'); });
+    });
+
+    if (root) root.addEventListener('click', function (e) {
+      var del = e.target.closest('[data-storage-delete]');
+      if (!del) return;
+      var id = del.getAttribute('data-location-id');
+      del.disabled = true;
+      fetch('/api/storage/' + encodeURIComponent(id), { method: 'DELETE', headers: { Accept: 'application/json' } })
+        .then(function (res) {
+          if (res.ok) { toast('Location deleted', 'success'); var row = del.closest('[data-storage-row]'); if (row) row.remove(); }
+          else { del.disabled = false; toast('Delete failed', 'error'); }
+        }).catch(function () { del.disabled = false; toast('Delete failed', 'error'); });
+    });
+  }
+
+  // --- Card detail: storage assignment ------------------------------------
+  function initStorageAssign() {
+    var sel = document.querySelector('[data-storage-assign]');
+    if (!sel) return;
+    var id = sel.getAttribute('data-inventory-id');
+    if (!id) return;
+    sel.addEventListener('change', function () {
+      fetch('/api/inventory/' + encodeURIComponent(id) + '/storage', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ storage_location_id: sel.value }),
+      }).then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+        .then(function (r) {
+          if (r.ok) toast('Storage updated', 'success');
+          else toast((r.data && r.data.errors && Object.values(r.data.errors)[0]) || 'Update failed', 'error');
+        }).catch(function () { toast('Update failed', 'error'); });
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initSidebar();
     initUserMenu();
@@ -735,6 +924,9 @@
     initListingActions();
     initListingPreview();
     initBatchReview();
+    initBulk();
+    initStorage();
+    initStorageAssign();
   });
 
   // Expose helpers for later features.

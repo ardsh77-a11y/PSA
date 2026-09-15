@@ -123,6 +123,15 @@ export interface SkuGenerator {
    * assigned SKU (or the existing one if already present).
    */
   assignToInventory(userId: string, inventoryId: string, format?: string): string | null;
+  /**
+   * Generate a unique bulk-lot SKU (FEAT-006). Uses a `BULK` set token and the
+   * category as the number token, e.g. `PKM-BULK-COMMONS-500-001`, and is
+   * guaranteed not to collide with an existing inventory/listing SKU.
+   */
+  generateForBulkLot(
+    userId: string,
+    lot: { category?: string | null; cardCount?: number | null },
+  ): { sku: string; sequence: number };
 }
 
 /** Collect every SKU currently used by a user (inventory + listings). */
@@ -209,5 +218,19 @@ export const skuGenerator: SkuGenerator = {
       inventoryId,
     );
     return sku;
+  },
+
+  generateForBulkLot(userId, lot): { sku: string; sequence: number } {
+    const game = tokenize(pokemonStrategy.skuGameCode, 'PKM');
+    const category = tokenize(lot.category, 'BULK');
+    const count = tokenize(lot.cardCount != null ? String(lot.cardCount) : null, '0');
+    let sequence = this.nextSequence(userId);
+    for (let attempt = 0; attempt < 100000; attempt++) {
+      const seq = formatSequence(sequence);
+      const sku = `${game}-BULK-${category}-${count}-${seq}`;
+      if (!this.isTaken(userId, sku)) return { sku, sequence };
+      sequence++;
+    }
+    return { sku: `${game}-BULK-${Date.now()}`, sequence };
   },
 };
