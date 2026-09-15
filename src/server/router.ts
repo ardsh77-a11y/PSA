@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-export type HttpMethod = 'GET' | 'POST';
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface UserRecord {
   id: string;
@@ -74,6 +74,18 @@ export class Router {
 
   post(pattern: string, handler: Handler): void {
     this.add('POST', pattern, handler);
+  }
+
+  put(pattern: string, handler: Handler): void {
+    this.add('PUT', pattern, handler);
+  }
+
+  patch(pattern: string, handler: Handler): void {
+    this.add('PATCH', pattern, handler);
+  }
+
+  delete(pattern: string, handler: Handler): void {
+    this.add('DELETE', pattern, handler);
   }
 
   /**

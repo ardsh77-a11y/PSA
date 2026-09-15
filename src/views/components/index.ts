@@ -82,6 +82,60 @@ export function button(opts: ButtonOptions): string {
   return `<button class="${cls}" type="${escapeHtml(opts.type ?? 'button')}">${escapeHtml(opts.label)}</button>`;
 }
 
+/**
+ * The 'Demo data' banner shown at the top of pages when the current user has
+ * demo-flagged inventory, so seeded data is clearly distinguished (section 44).
+ */
+export function demoBanner(): string {
+  return `<div class="demo-banner" role="note">
+  <span class="badge badge-info">Demo data</span>
+  <span>You are viewing sample inventory seeded for exploration. Add your own cards any time; demo rows are clearly marked.</span>
+</div>`;
+}
+
+/** A small inline 'Demo' tag for individual seeded rows/records. */
+export function demoTag(): string {
+  return `<span class="badge badge-info demo-tag" title="Seeded demo data">Demo</span>`;
+}
+
+/** Neutral placeholder card image (served from public/). */
+export function cardThumb(imageUrl: string | null | undefined, alt: string, size: 'sm' | 'lg' = 'sm'): string {
+  const src = imageUrl && imageUrl.trim() ? imageUrl : '/card-placeholder.svg';
+  return `<img class="card-thumb card-thumb-${escapeHtml(size)}" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" />`;
+}
+
+export interface PaginationOptions {
+  page: number;
+  pageSize: number;
+  total: number;
+  /** Build an href for a given page number, preserving current filters. */
+  hrefForPage: (page: number) => string;
+}
+
+/** Server-rendered pagination control. */
+export function pagination(opts: PaginationOptions): string {
+  const { page, pageSize, total } = opts;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  if (pageCount <= 1) {
+    const only = total === 0 ? 'No results' : `${total} result${total === 1 ? '' : 's'}`;
+    return `<div class="pagination"><span class="pagination-info">${escapeHtml(only)}</span></div>`;
+  }
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+  const prev =
+    page > 1
+      ? `<a class="btn btn-ghost" href="${escapeHtml(opts.hrefForPage(page - 1))}">Prev</a>`
+      : `<span class="btn btn-ghost disabled" aria-disabled="true">Prev</span>`;
+  const next =
+    page < pageCount
+      ? `<a class="btn btn-ghost" href="${escapeHtml(opts.hrefForPage(page + 1))}">Next</a>`
+      : `<span class="btn btn-ghost disabled" aria-disabled="true">Next</span>`;
+  return `<div class="pagination">
+  <span class="pagination-info">${escapeHtml(`${from}–${to} of ${total}`)}</span>
+  <div class="pagination-controls">${prev}<span class="pagination-page">Page ${escapeHtml(String(page))} / ${escapeHtml(String(pageCount))}</span>${next}</div>
+</div>`;
+}
+
 export interface ActionCardOptions {
   title: string;
   description: string;

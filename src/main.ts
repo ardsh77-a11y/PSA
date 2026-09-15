@@ -8,12 +8,18 @@ import { tryServeStatic } from './server/middleware/static.js';
 import { notFound, serverError } from './server/errors.js';
 import { registerAuthRoutes } from './server/routes/auth.js';
 import { registerAppRoutes } from './server/routes/app.js';
+import { registerInventoryRoutes } from './server/routes/inventory.js';
+import { registerInventoryApi } from './api/inventory.js';
+import { registerCardsApi } from './api/cards.js';
 
 /** Build the router with all registered routes. */
 export function buildRouter(): Router {
   const router = new Router();
   registerAuthRoutes(router);
   registerAppRoutes(router);
+  registerInventoryRoutes(router);
+  registerInventoryApi(router);
+  registerCardsApi(router);
   return router;
 }
 
@@ -48,8 +54,9 @@ async function handle(
     return;
   }
 
-  // 4) Parse body for POST requests.
-  const body = method === 'POST' ? await parseBody(req) : undefined;
+  // 4) Parse body for methods that carry one.
+  const hasBody = method === 'POST' || method === 'PUT' || method === 'PATCH';
+  const body = hasBody ? await parseBody(req) : undefined;
 
   const query: Record<string, string> = {};
   for (const [k, v] of url.searchParams as unknown as Iterable<[string, string]>) {

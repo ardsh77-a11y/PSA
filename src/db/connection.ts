@@ -36,3 +36,12 @@ export function closeDb(): void {
     db = null;
   }
 }
+
+/**
+ * Testing hook: replace the process-wide connection with a caller-provided
+ * instance (typically an in-memory DatabaseSync). Pass null to reset so the
+ * next getDb() rebuilds from config. Not used in production code paths.
+ */
+export function __setTestDb(instance: DatabaseSync | null): void {
+  db = instance;
+}

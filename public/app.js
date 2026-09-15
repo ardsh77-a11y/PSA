@@ -78,10 +78,114 @@
     });
   }
 
+  // --- Inventory: card picker (manual entry) -------------------------------
+  function initCardPicker() {
+    var root = document.querySelector('[data-card-picker]');
+    if (!root) return;
+    var search = root.querySelector('[data-card-search]');
+    var results = root.querySelector('[data-card-results]');
+    var hidden = root.querySelector('[data-card-id]');
+    var selected = root.querySelector('[data-card-selected]');
+    var selectedLabel = root.querySelector('[data-card-selected-label]');
+    var clearBtn = root.querySelector('[data-card-clear]');
+    if (!search || !results || !hidden) return;
+
+    var timer = null;
+
+    function hideResults() { results.hidden = true; results.innerHTML = ''; }
+
+    function choose(row) {
+      hidden.value = row.id;
+      if (selectedLabel) selectedLabel.textContent = row.title || row.name;
+      if (selected) selected.hidden = false;
+      search.value = '';
+      hideResults();
+    }
+
+    search.addEventListener('input', function () {
+      var q = search.value.trim();
+      if (timer) clearTimeout(timer);
+      if (q.length < 2) { hideResults(); return; }
+      timer = setTimeout(function () {
+        apiGet('/api/cards?q=' + encodeURIComponent(q)).then(function (data) {
+          results.innerHTML = '';
+          if (!data.rows || !data.rows.length) {
+            results.hidden = true;
+            return;
+          }
+          data.rows.forEach(function (row) {
+            var li = document.createElement('li');
+            var sub = [row.set_name, row.number, row.rarity].filter(Boolean).join(' · ');
+            li.innerHTML = '<div>' + escapeText(row.name) + '</div><div class="pick-sub">' + escapeText(sub) + '</div>';
+            li.addEventListener('click', function () { choose(row); });
+            results.appendChild(li);
+          });
+          results.hidden = false;
+        }).catch(function () { hideResults(); });
+      }, 200);
+    });
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () {
+        hidden.value = '';
+        if (selected) selected.hidden = true;
+        search.focus();
+      });
+    }
+
+    document.addEventListener('click', function (e) {
+      if (!root.contains(e.target)) hideResults();
+    });
+  }
+
+  function escapeText(s) {
+    var d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  // --- Inventory: card detail inline save (PATCH) --------------------------
+  function initCardDetail() {
+    var root = document.querySelector('[data-card-detail]');
+    if (!root) return;
+    var id = root.getAttribute('data-inventory-id');
+    var saveBtn = root.querySelector('[data-save-detail]');
+    var statusSel = root.querySelector('[data-status-select]');
+    var targetInput = root.querySelector('[data-target-price]');
+    if (!saveBtn || !id) return;
+
+    saveBtn.addEventListener('click', function () {
+      var patch = {};
+      if (statusSel) patch.status = statusSel.value;
+      if (targetInput && targetInput.value !== '') patch.target_price = Number(targetInput.value);
+      saveBtn.disabled = true;
+      fetch('/api/inventory/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(patch),
+      }).then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+      }).then(function (r) {
+        saveBtn.disabled = false;
+        if (r.ok) {
+          toast('Saved', 'success');
+        } else {
+          var msg = r.data && r.data.errors ? Object.values(r.data.errors)[0] : 'Save failed';
+          toast(msg, 'error');
+        }
+      }).catch(function () {
+        saveBtn.disabled = false;
+        toast('Save failed', 'error');
+      });
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initSidebar();
     initUserMenu();
     initForms();
+    initCardPicker();
+    initCardDetail();
   });
 
   // Expose helpers for later features.
