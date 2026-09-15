@@ -1,0 +1,16 @@
+{
+  "name": "pokeops",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PokeOps - Pokemon TCG Seller Operating System",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --no-warnings dist/main.js",
+    "dev": "node --no-warnings dist/main.js",
+    "seed": "node --no-warnings dist/scripts/seed.js",
+    "test": "tsc -p tsconfig.json && node --no-warnings --test \"dist/**/*.test.js\""
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

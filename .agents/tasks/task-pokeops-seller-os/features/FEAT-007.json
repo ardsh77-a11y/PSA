@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-007",
+  "type": "feat",
+  "description": "Order management + fulfillment workflow + profit tracking + pack/rip tracking (P1 items 18,19; sections 23,24,25,26). An Orders page listing orders with id/card/buyer/sale price/fees/shipping/net revenue/inventory location/status and the status lifecycle (New, Picking, Packed, Shipped, Delivered, Cancelled, Returned). A fast fulfillment workflow: on a new order show the sold card, its storage location and photo, then mark picked -> packed -> enter tracking -> mark shipped. True profit tracking (Revenue - fees - shipping - packaging - card acquisition/rip cost - other expenses) with configurable cost assumptions, recording a Sale on completion. Pack/rip tracking to log products opened (packs, box/case cost, date, cards pulled, estimated pulled value, estimated profit).",
+  "status": "pending",
+  "steps": [
+    "Reminder: zero deps, `unset NODE_OPTIONS`. Depends on FEAT-001 (orders, order_items, sales, expenses, listings, inventory, storage_locations tables), FEAT-002 (inventoryRepo, storage), FEAT-003 (settings: fees/shipping/packaging cost assumptions), FEAT-005 (listings link). Read those first.",
+    "src/repositories: flesh out ordersRepo (create, getById userId, listByUser filter by status, update status/tracking/shipped_at), orderItemsRepo (items per order joined to inventory/card for display incl. storage location + image), salesRepo (create sale, listByUser, aggregates for analytics later), expensesRepo (CRUD, listByUser). All user-scoped.",
+    "src/services/profitService.ts: computeOrderProfit(order, items, settings): net = sale_price - marketplace_fees - shipping - packaging - sum(cost_basis of items i.e. acquisition/rip cost allocation) - other allocated expenses (section 25). Fees default from settings (fee % + fixed); packaging cost from settings. Return a breakdown object for display. recordSale(order): on an order reaching 'Shipped'/'Delivered', create sales rows per item with cost_basis + net_profit, and set the linked inventory to 'Sold'/'Shipped' with date_sold. Configurable cost assumptions come from Settings.",
+    "src/services/ripService.ts + repository: log a pack/rip: product name, number of packs, box/case cost, date opened, cards pulled (count or linkage), estimated pulled value; compute estimated profit = estimated pulled value - box cost (section 26 example: $105 box, 36 packs, $142 pulled -> $37 profit). Store as an expense (acquisition cost) + a rip record so acquisition cost can be allocated to inventory as cost basis.",
+    "src/views/pages/orders.ts + route GET /orders: Orders table with Order ID, card(s), buyer, sale price, fees, shipping, net revenue, inventory location, status badge; filters by status; row -> order detail. src/views/pages/order_detail.ts + route GET /orders/:id: the fulfillment workflow (section 24) - show sold card(s), storage location (BOX/Shelf/Slot), card photo (placeholder), and step buttons: Mark Picked -> Mark Packed -> enter Tracking number -> Mark Shipped; each transition updates status. Optimized for fast fulfillment (big clear actions, keyboard-friendly).",
+    "src/views/pages/rip.ts (or a Pack/Rip Tracking section, reachable from Analytics/Inventory nav or Settings) + routes: form to log a rip and a list of logged rips with cost/packs/pulled value/estimated profit.",
+    "src/api/orders.ts: GET /api/orders (filter), POST /api/orders (create; also a demo helper to create an order from a Listed inventory item to exercise the flow), PATCH /api/orders/:id (status transitions New->Picking->Packed->Shipped->Delivered / Cancelled / Returned, tracking number). On Shipped, invoke profitService.recordSale. src/api/rips.ts: CRUD rips. src/api/expenses.ts: CRUD expenses. All user-scoped + validated; never lose data on invalid input (section 40).",
+    "Wire the Orders nav item to /orders. Ensure order items surface the storage location + photo for fulfillment. Ensure recorded sales + expenses feed the Analytics/Dashboard in FEAT-008.",
+    "Tests (node:test): src/services/profitService.test.ts - profit breakdown = revenue - fees - shipping - packaging - cost basis - expenses with configurable assumptions; recordSale creates a sale row and flips inventory to Sold. src/services/ripService.test.ts - the section-26 example ($105 box / 36 packs / $142 pulled) yields estimated profit $37 and stores an acquisition expense. src/repositories/orders.test.ts - order status transitions persist, tracking number stored on Shipped, listing/order/sales are user-scoped."
+  ],
+  "acceptance_criteria": [
+    "`npm run build` and `npm test` pass including profit, rip, and order tests.",
+    "The Orders page lists orders with id/card/buyer/sale price/fees/shipping/net revenue/inventory location/status; statuses follow New->Picking->Packed->Shipped->Delivered plus Cancelled/Returned.",
+    "The order detail fulfillment flow shows the sold card + storage location + photo and supports Mark Picked -> Packed -> enter Tracking -> Mark Shipped, persisting each transition.",
+    "Profit tracking computes true net (revenue minus fees, shipping, packaging, acquisition/rip cost, other expenses) with configurable cost assumptions; completing an order records a Sale and flips inventory to Sold.",
+    "Pack/rip logging computes estimated profit (verified by the section-26 $105/36/$142 -> $37 example) and records the acquisition cost."
+  ],
+  "verification": [
+    "unset NODE_OPTIONS; cd /projects/sandbox/PSA && npm run build && npm test",
+    "unset NODE_OPTIONS; cd /projects/sandbox/PSA && (npm start & sleep 2; curl -s -i localhost:4000/orders -H 'Cookie: <session>' | head -5; kill %1)  or a node:test integration creating an order from seeded data and walking it to Shipped, asserting a sale + profit are recorded"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

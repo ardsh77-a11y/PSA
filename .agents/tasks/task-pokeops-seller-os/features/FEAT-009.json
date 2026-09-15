@@ -1,0 +1,23 @@
+{
+  "id": "FEAT-009",
+  "type": "docs",
+  "description": "Comprehensive README documenting the PokeOps stack, offline constraints, install/build/seed/test/run instructions, the modular AI/pricing/marketplace interface boundaries, the database schema overview, and an explicit P0/P1/P2 feature status matrix (implemented vs stubbed). This is the final deliverable that lets a new developer run the app and understand what is real vs mocked.",
+  "status": "pending",
+  "steps": [
+    "Reminder: zero deps, `unset NODE_OPTIONS`. This runs after FEAT-001..008 so the README reflects what actually exists. Read package.json scripts, tsconfig, the src/ directory layout, the interfaces in src/services/interfaces, and the seed script before writing.",
+    "Write /projects/sandbox/PSA/README.md covering: (1) Product summary (PokeOps - AI-powered Pokemon TCG Seller Operating System) and the core loop Scan -> Identify -> Value -> Single/Bulk -> Listing. (2) Tech stack and WHY: zero-dependency TypeScript on Node.js 22 built-ins (node:http, node:sqlite, node:crypto, node:test), compiled with the global TypeScript compiler; vanilla-TS/server-rendered frontend, hand-drawn SVG charts - chosen because the sandbox has NO npm registry access. (3) Requirements: Node.js 22+ (for node:sqlite). (4) The critical NODE_OPTIONS caveat: you must `unset NODE_OPTIONS` before build/test/run in this environment, and why. (5) Setup/run: `unset NODE_OPTIONS`, `npm run build`, `npm run seed`, `npm start`, open http://localhost:4000, demo login (demo@pokeops.local + password). (6) `npm test` to run the node:test suite. (7) Directory structure overview. (8) Database schema: list the 15 entities and their relationships. (9) Modular architecture / interface boundaries: document Recognizer, PricingEngine, ClassificationService, ListingGenerator, MarketplacePublisher, SellerAssistant - where each interface lives, that the current implementations are deterministic MOCKS, and exactly how a real CV model / real eBay-TCGplayer API / real price feed / real LLM drops in behind the same interface without touching the UI. (10) Feature status matrix: P0 (implemented), P1 (implemented where done), P2 (stubbed behind interfaces) with a short line per item from spec section 43. (11) Demo data note (section 44): data is seeded and flagged is_demo, clearly labeled in the UI. (12) Security notes (section 42): passwords hashed with scrypt, sessions, no marketplace credentials in the frontend. (13) Known limitations / future work: real integrations are out of scope offline; in-memory session store; experimental node:sqlite warning.",
+    "Ensure README commands exactly match the real package.json scripts and default port/paths. Include a short 'Offline / network-restricted build' note so the build strategy is reproducible."
+  ],
+  "acceptance_criteria": [
+    "README.md exists at repo root and accurately documents the stack, the NODE_OPTIONS caveat, and the exact build/seed/test/run commands that work in this sandbox.",
+    "README documents all six modular interfaces (Recognizer, PricingEngine, ClassificationService, ListingGenerator, MarketplacePublisher, SellerAssistant), states they are currently mocked, and explains how real implementations plug in without UI changes.",
+    "README includes the 15-entity schema overview and a P0/P1/P2 feature status matrix (implemented vs stubbed).",
+    "Every command in the README, run from a clean checkout with NODE_OPTIONS unset, works (build, seed, test, start)."
+  ],
+  "verification": [
+    "unset NODE_OPTIONS; cd /projects/sandbox/PSA && npm run build && npm run seed && npm test  (confirm README commands succeed)",
+    "Manually re-read README.md and confirm the interface boundaries and P0/P1/P2 matrix match the actual code in src/services/interfaces and the implemented pages."
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
