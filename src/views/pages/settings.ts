@@ -137,7 +137,32 @@ export function renderSettingsPage(data: SettingsPageData): string {
     <button type="submit" class="btn btn-primary">Save settings</button>
     <a class="btn btn-ghost" href="/pricing">Go to Pricing</a>
   </div>
-</form>`;
+</form>
+
+<section class="panel" data-import-export>
+  <div class="panel-header"><h2>Import &amp; export</h2><span class="panel-sub">CSV in and out (section 35)</span></div>
+  <div class="impexp-grid">
+    <div class="impexp-export">
+      <h3>Export CSV</h3>
+      <p class="field-hint">Download your data for spreadsheets, accounting or backups.</p>
+      <div class="impexp-links">
+        <a class="btn btn-ghost" href="/export/inventory.csv">Inventory</a>
+        <a class="btn btn-ghost" href="/export/sales.csv">Sales</a>
+        <a class="btn btn-ghost" href="/export/profit-report.csv">Profit report</a>
+        <a class="btn btn-ghost" href="/export/listings.csv">Listings</a>
+      </div>
+    </div>
+    <div class="impexp-import">
+      <h3>Import inventory</h3>
+      <p class="field-hint">Upload a CSV with columns: card_name, set_name, set_abbreviation, card_number, rarity, condition, quantity, acquisition_cost, market_value, status, sku, classification, notes. Bad rows are reported without aborting the import.</p>
+      <form class="impexp-form" method="post" action="/api/import/inventory" enctype="multipart/form-data" data-import-form>
+        <input type="file" name="file" accept=".csv,text/csv" data-import-file />
+        <button type="submit" class="btn btn-primary">Import</button>
+      </form>
+      <div class="impexp-result" data-import-result hidden></div>
+    </div>
+  </div>
+</section>`;
 
   return renderLayout({ title: 'Settings', user: data.user, activeNav: 'settings', body });
 }

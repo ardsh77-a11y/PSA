@@ -49,7 +49,11 @@ export type {
   UnpublishResult,
 } from './marketplace.js';
 
-/** Answers seller questions / suggests actions (mock returns canned help). */
-export interface SellerAssistant {
-  ask(prompt: string): Promise<string>;
-}
+// The seller-assistant seam lives in ./sellerAssistant.ts. It answers a user's
+// natural-language questions from their real data; a real LLM implements the
+// same interface with no UI change. Re-exported here.
+export type {
+  SellerAssistant,
+  AssistantAnswer,
+  AssistantData,
+} from './sellerAssistant.js';

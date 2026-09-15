@@ -24,7 +24,10 @@ export interface ParsedBody {
 export async function parseBody(req: IncomingMessage): Promise<ParsedBody> {
   const rawBuffer = await readRaw(req);
   const raw = rawBuffer.toString('utf8');
-  const contentType = String(req.headers['content-type'] ?? '').toLowerCase();
+  // Keep the original header for the multipart boundary (which is
+  // case-sensitive); use a lowercased copy only for content-type detection.
+  const contentTypeRaw = String(req.headers['content-type'] ?? '');
+  const contentType = contentTypeRaw.toLowerCase();
   const result: ParsedBody = { fields: {}, raw, rawBuffer };
 
   if (!rawBuffer.length) return result;
@@ -49,7 +52,7 @@ export async function parseBody(req: IncomingMessage): Promise<ParsedBody> {
       result.fields[key] = val;
     }
   } else if (contentType.includes('multipart/form-data')) {
-    const parsed = parseMultipart(rawBuffer, contentType);
+    const parsed = parseMultipart(rawBuffer, contentTypeRaw);
     result.files = parsed.files;
     for (const [k, v] of Object.entries(parsed.fields)) {
       result.fields[k] = v;

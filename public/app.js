@@ -1016,6 +1016,110 @@
     });
   }
 
+  // --- Dashboard seller assistant -----------------------------------------
+  function initAssistant() {
+    var root = document.querySelector('[data-assistant]');
+    if (!root) return;
+    var form = root.querySelector('[data-assistant-form]');
+    var input = root.querySelector('[data-assistant-input]');
+    var answer = root.querySelector('[data-assistant-answer]');
+    if (!form || !input || !answer) return;
+
+    function renderData(data) {
+      if (!data) return '';
+      var html = '';
+      if (data.stats) {
+        html += '<ul class="assistant-stats">';
+        Object.keys(data.stats).forEach(function (k) {
+          html += '<li><span>' + escapeText(k) + '</span><strong>' + escapeText(data.stats[k]) + '</strong></li>';
+        });
+        html += '</ul>';
+      }
+      if (data.rows && data.rows.length) {
+        var cols = Object.keys(data.rows[0]);
+        html += '<div class="table-wrap"><table class="data-table"><thead><tr>';
+        cols.forEach(function (c) { html += '<th>' + escapeText(c) + '</th>'; });
+        html += '</tr></thead><tbody>';
+        data.rows.slice(0, 8).forEach(function (r) {
+          html += '<tr>';
+          cols.forEach(function (c) { html += '<td>' + escapeText(r[c]) + '</td>'; });
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      if (data.href && data.linkLabel) {
+        html += '<a class="btn btn-ghost" href="' + escapeText(data.href) + '">' + escapeText(data.linkLabel) + '</a>';
+      }
+      return html;
+    }
+
+    function escapeText(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function ask(question) {
+      if (!question) return;
+      answer.hidden = false;
+      answer.innerHTML = '<p class="assistant-thinking">Thinking…</p>';
+      apiPost('/api/assistant', { question: question })
+        .then(function (res) {
+          answer.innerHTML = '<p class="assistant-answer-text">' + escapeText(res.answer) + '</p>' + renderData(res.data);
+        })
+        .catch(function () {
+          answer.innerHTML = '<p class="assistant-answer-text">Sorry, I could not answer that right now.</p>';
+        });
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      ask(input.value.trim());
+    });
+    root.querySelectorAll('[data-assistant-suggestion]').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        input.value = chip.textContent;
+        ask(chip.textContent);
+      });
+    });
+  }
+
+  // --- Settings: CSV inventory import -------------------------------------
+  function initImport() {
+    var form = document.querySelector('[data-import-form]');
+    if (!form) return;
+    var fileInput = form.querySelector('[data-import-file]');
+    var result = document.querySelector('[data-import-result]');
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (!fileInput || !fileInput.files || !fileInput.files.length) {
+        toast('Choose a CSV file first', 'error');
+        return;
+      }
+      var fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      fetch('/api/import/inventory', { method: 'POST', headers: { Accept: 'application/json' }, body: fd })
+        .then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+        .then(function (r) {
+          if (result) result.hidden = false;
+          if (!r.ok) {
+            if (result) result.innerHTML = '<p class="form-error">' + (r.data.error || 'Import failed') + '</p>';
+            return;
+          }
+          var d = r.data;
+          var msg = '<p class="form-success">Imported ' + d.created + ' of ' + d.total + ' rows (' + d.errored + ' errored, ' + d.skipped + ' skipped).</p>';
+          if (d.errors && d.errors.length) {
+            msg += '<ul class="impexp-errors">';
+            d.errors.slice(0, 10).forEach(function (er) { msg += '<li>Row ' + er.row + ': ' + er.message + '</li>'; });
+            msg += '</ul>';
+          }
+          if (result) result.innerHTML = msg;
+          toast('Imported ' + d.created + ' rows', 'success');
+        })
+        .catch(function () { toast('Import failed', 'error'); });
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initSidebar();
     initUserMenu();
@@ -1035,6 +1139,8 @@
     initStorageAssign();
     initOrderActions();
     initRips();
+    initAssistant();
+    initImport();
   });
 
   // Expose helpers for later features.
