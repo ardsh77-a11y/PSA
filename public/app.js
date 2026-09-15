@@ -891,6 +891,112 @@
     });
   }
 
+  // --- Orders: fulfillment actions (status transitions + tracking) --------
+  var ORDER_TONE = {
+    New: 'info', Picking: 'warning', Packed: 'warning', Shipped: 'info',
+    Delivered: 'success', Cancelled: 'danger', Returned: 'danger',
+  };
+  function orderBadgeHtml(status) {
+    return '<span class="badge badge-' + (ORDER_TONE[status] || 'neutral') + '">' + escapeText(status) + '</span>';
+  }
+
+  function initOrderActions() {
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-order-action]');
+      if (!btn) return;
+      var id = btn.getAttribute('data-order-id');
+      var to = btn.getAttribute('data-order-to');
+      if (!id || !to) return;
+
+      var body = { status: to };
+      // If we're shipping, include any tracking number entered on the page.
+      if (to === 'Shipped') {
+        var trackingInput = document.querySelector('[data-order-tracking]');
+        if (trackingInput && trackingInput.value.trim()) body.tracking_number = trackingInput.value.trim();
+      }
+      btn.disabled = true;
+      fetch('/api/orders/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      }).then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+        .then(function (r) {
+          btn.disabled = false;
+          if (!r.ok) {
+            var msg = (r.data && (r.data.error || (r.data.errors && Object.values(r.data.errors)[0]))) || 'Update failed';
+            toast(msg, 'error');
+            return;
+          }
+          var order = r.data.order;
+          toast('Order marked ' + to, 'success');
+          // On a detail page reload so the step ladder + actions re-render.
+          if (document.querySelector('[data-order-detail]')) {
+            setTimeout(function () { window.location.reload(); }, 500);
+            return;
+          }
+          // On the list page, update the row's status badge in place.
+          var row = btn.closest('[data-order-row]');
+          if (row && order) {
+            var badge = row.querySelector('[data-order-status]');
+            if (badge) badge.innerHTML = orderBadgeHtml(order.status);
+          }
+        }).catch(function () { btn.disabled = false; toast('Update failed', 'error'); });
+    });
+  }
+
+  // --- Rips: log-a-rip form + live estimate + delete ----------------------
+  function initRips() {
+    var form = document.querySelector('[data-rip-form]');
+    var table = document.querySelector('[data-rips-table]');
+    if (!form && !table) return;
+
+    if (form) {
+      var costEl = form.querySelector('[data-rip-cost]');
+      var pulledEl = form.querySelector('[data-rip-pulled]');
+      var estimateEl = form.querySelector('[data-rip-estimate]');
+
+      function recompute() {
+        var cost = Number(costEl && costEl.value) || 0;
+        var pulled = Number(pulledEl && pulledEl.value) || 0;
+        var profit = pulled - cost;
+        if (estimateEl) estimateEl.textContent = (profit < 0 ? '-$' : '$') + Math.abs(profit).toFixed(2);
+      }
+      if (costEl) costEl.addEventListener('input', recompute);
+      if (pulledEl) pulledEl.addEventListener('input', recompute);
+      recompute();
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var body = {
+          product_name: form.product_name.value,
+          packs: Number(form.packs.value) || 1,
+          box_cost: Number(form.box_cost.value) || 0,
+          estimated_pulled_value: Number(form.estimated_pulled_value.value) || 0,
+          cards_pulled: Number(form.cards_pulled.value) || 0,
+          opened_at: form.opened_at.value || undefined,
+          notes: form.notes.value || undefined,
+        };
+        if (!body.product_name.trim()) { toast('Product name is required', 'error'); return; }
+        postJson('/api/rips', body).then(function (r) {
+          if (r.ok) { toast('Rip logged', 'success'); setTimeout(function () { window.location.reload(); }, 500); }
+          else toast((r.data && r.data.errors && Object.values(r.data.errors)[0]) || 'Log failed', 'error');
+        }).catch(function () { toast('Log failed', 'error'); });
+      });
+    }
+
+    document.addEventListener('click', function (e) {
+      var del = e.target.closest('[data-rip-delete]');
+      if (!del) return;
+      var id = del.getAttribute('data-rip-id');
+      del.disabled = true;
+      fetch('/api/rips/' + encodeURIComponent(id), { method: 'DELETE', headers: { Accept: 'application/json' } })
+        .then(function (res) {
+          if (res.ok) { toast('Rip deleted', 'success'); var row = del.closest('[data-rip-row]'); if (row) row.remove(); }
+          else { del.disabled = false; toast('Delete failed', 'error'); }
+        }).catch(function () { del.disabled = false; toast('Delete failed', 'error'); });
+    });
+  }
+
   // --- Card detail: storage assignment ------------------------------------
   function initStorageAssign() {
     var sel = document.querySelector('[data-storage-assign]');
@@ -927,6 +1033,8 @@
     initBulk();
     initStorage();
     initStorageAssign();
+    initOrderActions();
+    initRips();
   });
 
   // Expose helpers for later features.

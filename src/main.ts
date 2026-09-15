@@ -14,6 +14,7 @@ import { registerScanRoutes } from './server/routes/scan.js';
 import { registerListingsRoutes } from './server/routes/listings.js';
 import { registerBulkRoutes } from './server/routes/bulk.js';
 import { registerStorageRoutes } from './server/routes/storage.js';
+import { registerOrdersRoutes } from './server/routes/orders.js';
 import { registerInventoryApi } from './api/inventory.js';
 import { registerCardsApi } from './api/cards.js';
 import { registerPricingApi } from './api/pricing.js';
@@ -21,6 +22,9 @@ import { registerScanApi } from './api/scan.js';
 import { registerListingsApi } from './api/listings.js';
 import { registerBulkApi } from './api/bulk.js';
 import { registerStorageApi } from './api/storage.js';
+import { registerOrdersApi } from './api/orders.js';
+import { registerRipsApi } from './api/rips.js';
+import { registerExpensesApi } from './api/expenses.js';
 
 /** Build the router with all registered routes. */
 export function buildRouter(): Router {
@@ -33,6 +37,7 @@ export function buildRouter(): Router {
   registerListingsRoutes(router);
   registerBulkRoutes(router);
   registerStorageRoutes(router);
+  registerOrdersRoutes(router);
   registerInventoryApi(router);
   registerCardsApi(router);
   registerPricingApi(router);
@@ -40,6 +45,9 @@ export function buildRouter(): Router {
   registerListingsApi(router);
   registerBulkApi(router);
   registerStorageApi(router);
+  registerOrdersApi(router);
+  registerRipsApi(router);
+  registerExpensesApi(router);
   return router;
 }
 

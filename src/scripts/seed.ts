@@ -18,7 +18,9 @@ import { priceSnapshotsRepository } from '../repositories/priceSnapshotsReposito
 import { inventoryRepository } from '../repositories/inventoryRepository.js';
 import { listingsRepository } from '../repositories/listingsRepository.js';
 import { ordersRepository } from '../repositories/ordersRepository.js';
+import { orderItemsRepository } from '../repositories/orderItemsRepository.js';
 import { salesRepository } from '../repositories/salesRepository.js';
+import { ripService } from '../services/ripService.js';
 
 export const DEMO_EMAIL = 'demo@pokeops.local';
 export const DEMO_PASSWORD = 'pokeops-demo';
@@ -204,6 +206,7 @@ function clearDemoData(userId: string): void {
   db.prepare('DELETE FROM sales WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE user_id = ?)').run(userId);
   db.prepare('DELETE FROM orders WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM rips WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM listings WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM inventory WHERE user_id = ? AND is_demo = 1').run(userId);
   db.prepare('DELETE FROM inventory_lots WHERE user_id = ?').run(userId);
@@ -222,6 +225,7 @@ export interface SeedSummary {
   orders: number;
   sales: number;
   expenses: number;
+  rips: number;
 }
 
 export function runSeed(): SeedSummary {
@@ -397,15 +401,22 @@ export function runSeed(): SeedSummary {
     listingCount++;
   }
 
-  // 9) Orders + sales in various statuses.
+  // 9) Orders + sales across the full fulfillment lifecycle (section 23).
   let orderCount = 0;
   let salesCount = 0;
-  const orderStatuses = ['pending', 'paid', 'shipped', 'completed'];
+  // Canonical statuses: some active (New/Picking/Packed) and some completed
+  // (Shipped/Delivered) so the fulfillment flow + profit views both have data.
+  const orderStatuses = ['New', 'Picking', 'Packed', 'Shipped', 'Delivered', 'Delivered'];
   let si = 0;
   for (const sold of soldInventoryIds.slice(0, 12)) {
+    const status = orderStatuses[si % orderStatuses.length];
+    const realized = status === 'Shipped' || status === 'Delivered';
     const fees = round2(sold.salePrice * 0.13);
     const shipping = 1.25;
     const net = round2(sold.salePrice - fees - shipping);
+    const shippedAt = realized
+      ? new Date(Date.now() - si * 3 * 86400000).toISOString().slice(0, 19).replace('T', ' ')
+      : null;
     const order = ordersRepository.create({
       id: `order-${sold.id}`,
       user_id: userId,
@@ -416,27 +427,37 @@ export function runSeed(): SeedSummary {
       fees,
       shipping,
       net_revenue: net,
-      status: orderStatuses[si % orderStatuses.length],
+      status,
+      tracking_number: realized ? `9400${1000000000 + si}` : null,
+      shipped_at: shippedAt,
     });
-    db.prepare(
-      'INSERT INTO order_items (id, order_id, inventory_id, card_id, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?)',
-    ).run(`oi-${sold.id}`, order.id, sold.id, sold.card.id, 1, sold.salePrice);
-    orderCount++;
-
-    salesRepository.create({
-      id: `sale-${sold.id}`,
-      user_id: userId,
+    orderItemsRepository.create({
+      id: `oi-${sold.id}`,
       order_id: order.id,
       inventory_id: sold.id,
       card_id: sold.card.id,
-      sale_price: sold.salePrice,
-      fees,
-      shipping,
-      cost_basis: sold.cost,
-      net_profit: round2(net - sold.cost),
-      sold_at: new Date(Date.now() - si * 3 * 86400000).toISOString().slice(0, 19).replace('T', ' '),
+      quantity: 1,
+      unit_price: sold.salePrice,
     });
-    salesCount++;
+    orderCount++;
+
+    // Only realized (Shipped/Delivered) orders record a sale.
+    if (realized) {
+      salesRepository.create({
+        id: `sale-${sold.id}`,
+        user_id: userId,
+        order_id: order.id,
+        inventory_id: sold.id,
+        card_id: sold.card.id,
+        sale_price: sold.salePrice,
+        fees,
+        shipping,
+        cost_basis: sold.cost,
+        net_profit: round2(net - sold.cost),
+        sold_at: shippedAt,
+      });
+      salesCount++;
+    }
     si++;
   }
 
@@ -455,6 +476,21 @@ export function runSeed(): SeedSummary {
     expenseCount++;
   }
 
+  // 11) Pack/rip logs (section 26). The first mirrors the worked example:
+  // a $105 box of 36 packs that pulled $142 -> $37 estimated profit. Each also
+  // records an acquisition expense via ripService.
+  let ripCount = 0;
+  const ripSeeds = [
+    { product_name: 'Obsidian Flames Booster Box', packs: 36, box_cost: 105, estimated_pulled_value: 142, cards_pulled: 360 },
+    { product_name: 'Paldean Fates Elite Trainer Box', packs: 9, box_cost: 49.99, estimated_pulled_value: 58, cards_pulled: 90 },
+    { product_name: '151 Ultra Premium Collection', packs: 16, box_cost: 119.99, estimated_pulled_value: 96, cards_pulled: 160 },
+  ];
+  for (const r of ripSeeds) {
+    ripService.logRip(userId, r);
+    ripCount++;
+    expenseCount++; // each rip records a linked acquisition expense
+  }
+
   return {
     sets: SETS.length,
     cards: cards.length,
@@ -466,6 +502,7 @@ export function runSeed(): SeedSummary {
     orders: orderCount,
     sales: salesCount,
     expenses: expenseCount,
+    rips: ripCount,
   };
 }
 
@@ -483,6 +520,7 @@ function main(): void {
   console.log(`  Orders ............. ${summary.orders}`);
   console.log(`  Sales .............. ${summary.sales}`);
   console.log(`  Expenses ........... ${summary.expenses}`);
+  console.log(`  Rips ............... ${summary.rips}`);
   console.log('----------------------------------------');
   console.log(`  Demo login: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
   closeDb();

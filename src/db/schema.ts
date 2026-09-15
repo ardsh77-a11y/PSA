@@ -23,6 +23,7 @@ export const TABLE_NAMES = [
   'expenses',
   'scans',
   'scan_results',
+  'rips',
 ] as const;
 
 export function runMigrations(db: DatabaseSync): void {
@@ -231,6 +232,21 @@ export function runMigrations(db: DatabaseSync): void {
       raw_json           TEXT NOT NULL DEFAULT '{}'
     );
 
+    CREATE TABLE IF NOT EXISTS rips (
+      id                    TEXT PRIMARY KEY,
+      user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product_name          TEXT NOT NULL,
+      packs                 INTEGER NOT NULL DEFAULT 1,
+      box_cost              REAL NOT NULL DEFAULT 0,
+      cards_pulled          INTEGER NOT NULL DEFAULT 0,
+      estimated_pulled_value REAL NOT NULL DEFAULT 0,
+      estimated_profit      REAL NOT NULL DEFAULT 0,
+      expense_id            TEXT REFERENCES expenses(id) ON DELETE SET NULL,
+      notes                 TEXT,
+      opened_at             TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_inventory_user_status ON inventory(user_id, status);
     CREATE INDEX IF NOT EXISTS idx_inventory_user_card ON inventory(user_id, card_id);
     CREATE INDEX IF NOT EXISTS idx_cards_set ON cards(set_id);
@@ -241,5 +257,7 @@ export function runMigrations(db: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_scan_results_scan ON scan_results(scan_id);
     CREATE INDEX IF NOT EXISTS idx_sales_user ON sales(user_id);
     CREATE INDEX IF NOT EXISTS idx_storage_user ON storage_locations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(user_id);
+    CREATE INDEX IF NOT EXISTS idx_rips_user ON rips(user_id);
   `);
 }

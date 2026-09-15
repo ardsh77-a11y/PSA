@@ -10,14 +10,14 @@ function freshDb(): DatabaseSync {
   return db;
 }
 
-test('runMigrations creates all 15 entity tables', () => {
+test('runMigrations creates all 16 entity tables', () => {
   const db = freshDb();
   const rows = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
     .all() as Array<{ name: string }>;
   const names = new Set(rows.map((r) => r.name));
 
-  assert.strictEqual(TABLE_NAMES.length, 15, 'expected 15 declared tables');
+  assert.strictEqual(TABLE_NAMES.length, 16, 'expected 16 declared tables');
   for (const t of TABLE_NAMES) {
     assert.ok(names.has(t), `missing table: ${t}`);
   }
@@ -32,7 +32,7 @@ test('runMigrations is idempotent', () => {
       c: number;
     }
   ).c;
-  assert.strictEqual(count, 15);
+  assert.strictEqual(count, 16);
   db.close();
 });
 
