@@ -180,12 +180,65 @@
     });
   }
 
+  // --- Card detail: live pricing + classification recompute ---------------
+  function initPricingPanel() {
+    var root = document.querySelector('[data-card-detail]');
+    if (!root) return;
+    var cardId = root.getAttribute('data-card-id');
+    var inventoryId = root.getAttribute('data-inventory-id');
+    if (!cardId) return;
+    var conditionSel = root.querySelector('[data-price-condition]');
+    var modeSel = root.querySelector('[data-price-mode]');
+    if (!conditionSel && !modeSel) return;
+
+    function fmt(v) {
+      return (v === null || v === undefined || isNaN(v)) ? '—' : '$' + Number(v).toFixed(2);
+    }
+    function setText(sel, text) {
+      var el = root.querySelector(sel);
+      if (el) el.textContent = text;
+    }
+    var DECISION = { SELL_INDIVIDUALLY: 'Sell individually', BULK: 'Bulk', REVIEW: 'Review' };
+    var TONE = { SELL_INDIVIDUALLY: 'success', BULK: 'neutral', REVIEW: 'warning' };
+
+    function recompute() {
+      var condition = conditionSel ? conditionSel.value : '';
+      var mode = modeSel ? modeSel.value : '';
+      var qs = '?condition=' + encodeURIComponent(condition) + '&mode=' + encodeURIComponent(mode);
+      apiGet('/api/pricing/' + encodeURIComponent(cardId) + qs).then(function (data) {
+        var p = data.pricing;
+        if (!p) return;
+        setText('[data-price-market]', fmt(p.marketPrice));
+        setText('[data-price-suggested]', fmt(p.suggestedPrice));
+        setText('[data-price-fees]', fmt(p.estimatedFees));
+        setText('[data-price-shipping]', fmt(p.estimatedShipping));
+        setText('[data-price-net]', fmt(p.estimatedNet));
+      }).catch(function () {});
+
+      if (inventoryId) {
+        apiGet('/api/classify/' + encodeURIComponent(inventoryId) + '?mode=' + encodeURIComponent(mode) + '&condition=' + encodeURIComponent(condition)).then(function (data) {
+          var c = data.classification;
+          if (!c) return;
+          var badge = root.querySelector('[data-decision-badge]');
+          if (badge) {
+            badge.innerHTML = '<span class="badge badge-' + (TONE[c.decision] || 'neutral') + '">' + escapeText(DECISION[c.decision] || c.decision) + '</span>';
+          }
+          setText('[data-recommendation-reason]', c.reason);
+        }).catch(function () {});
+      }
+    }
+
+    if (conditionSel) conditionSel.addEventListener('change', recompute);
+    if (modeSel) modeSel.addEventListener('change', recompute);
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initSidebar();
     initUserMenu();
     initForms();
     initCardPicker();
     initCardDetail();
+    initPricingPanel();
   });
 
   // Expose helpers for later features.

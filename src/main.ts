@@ -9,8 +9,10 @@ import { notFound, serverError } from './server/errors.js';
 import { registerAuthRoutes } from './server/routes/auth.js';
 import { registerAppRoutes } from './server/routes/app.js';
 import { registerInventoryRoutes } from './server/routes/inventory.js';
+import { registerPricingRoutes } from './server/routes/pricing.js';
 import { registerInventoryApi } from './api/inventory.js';
 import { registerCardsApi } from './api/cards.js';
+import { registerPricingApi } from './api/pricing.js';
 
 /** Build the router with all registered routes. */
 export function buildRouter(): Router {
@@ -18,8 +20,10 @@ export function buildRouter(): Router {
   registerAuthRoutes(router);
   registerAppRoutes(router);
   registerInventoryRoutes(router);
+  registerPricingRoutes(router);
   registerInventoryApi(router);
   registerCardsApi(router);
+  registerPricingApi(router);
   return router;
 }
 

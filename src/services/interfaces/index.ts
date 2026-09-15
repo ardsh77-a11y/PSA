@@ -27,27 +27,21 @@ export interface Recognizer {
   recognize(imageRef: string): Promise<RecognizedCard[]>;
 }
 
-export interface PriceQuote {
-  marketPrice: number;
-  low: number;
-  high: number;
-  recentSoldLow: number;
-  recentSoldHigh: number;
-  competitionCount: number;
-  source: string;
-}
-
-/** Produces price quotes for a card (mock uses seeded snapshots + math). */
-export interface PricingEngine {
-  quote(cardId: string): Promise<PriceQuote>;
-}
-
-export type Classification = 'single' | 'bulk';
-
-/** Decides whether a card should be sold as a single or as bulk. */
-export interface ClassificationService {
-  classify(input: { marketPrice: number; rarity?: string }): Classification;
-}
+// The pricing + single-vs-bulk classification seams live in their own modules
+// (they carry richer types driven by user settings). Re-exported here so
+// callers can keep importing from services/interfaces.
+export type {
+  PricingEngine,
+  MarketData,
+  PriceCardInput,
+  PriceResult,
+} from './pricing.js';
+export type {
+  ClassificationService,
+  ClassificationDecision,
+  ClassificationInput,
+  ClassificationResult,
+} from './classification.js';
 
 export interface GeneratedListing {
   title: string;

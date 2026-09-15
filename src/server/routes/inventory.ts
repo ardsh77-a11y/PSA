@@ -15,6 +15,9 @@ import { renderCardDetailPage } from '../../views/pages/card_detail.js';
 import { notFound } from '../errors.js';
 import { searchParamsFromQuery } from '../../api/inventory.js';
 import { INVENTORY_STATUSES } from '../../domain/tcg.js';
+import { mockPricingEngine } from '../../services/mock/mockPricingEngine.js';
+import { mockClassificationService } from '../../services/mock/mockClassificationService.js';
+import { settingsService } from '../../services/settings.js';
 
 function fields(ctx: RequestContext): Record<string, string> {
   return (ctx.body as ParsedBody | undefined)?.fields ?? {};
@@ -191,6 +194,20 @@ export function registerInventoryRoutes(router: Router): void {
       if (!row) return notFound(ctx.res);
       const priceHistory = row.card_id ? priceSnapshotsRepository.historyForCard(row.card_id) : [];
       const latestSnapshot = row.card_id ? priceSnapshotsRepository.latestForCard(row.card_id) : undefined;
+
+      const settings = settingsService.getPricingSettings(userId);
+      const marketData = row.card_id ? mockPricingEngine.getMarketData(row.card_id) : null;
+      const pricing = row.card_id
+        ? mockPricingEngine.priceCard(
+            { cardId: row.card_id, condition: row.condition, mode: settings.pricingMode },
+            settings,
+          )
+        : null;
+      const classification =
+        pricing !== null
+          ? mockClassificationService.classify({ marketData, pricing, settings })
+          : null;
+
       html(
         ctx.res,
         200,
@@ -202,6 +219,10 @@ export function registerInventoryRoutes(router: Router): void {
           listings: listingsRepository.listForInventory(userId, row.id),
           sales: salesRepository.listForInventory(userId, row.id),
           storageLocations: storageLocationsRepository.listForUser(userId),
+          mode: settings.pricingMode,
+          marketData,
+          pricing,
+          classification,
         }),
       );
     }),

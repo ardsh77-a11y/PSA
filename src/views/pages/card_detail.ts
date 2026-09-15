@@ -1,5 +1,5 @@
 import { renderLayout } from '../layout.js';
-import { statusBadge, cardThumb } from '../components/index.js';
+import { statusBadge, cardThumb, type BadgeTone } from '../components/index.js';
 import { escapeHtml } from '../../util/html.js';
 import type { UserRecord } from '../../server/router.js';
 import type { InventoryRow } from '../../repositories/inventoryRepository.js';
@@ -8,6 +8,9 @@ import type { Listing } from '../../repositories/listingsRepository.js';
 import type { Sale } from '../../repositories/salesRepository.js';
 import { describeLocation, type StorageLocation } from '../../repositories/storageLocationsRepository.js';
 import { INVENTORY_STATUSES, statusTone, strategyFor } from '../../domain/tcg.js';
+import { PRICING_MODES, PRICING_MODE_LABELS, type PricingMode } from '../../services/settings.js';
+import type { PriceResult, MarketData } from '../../services/interfaces/pricing.js';
+import type { ClassificationResult } from '../../services/interfaces/classification.js';
 
 export interface CardDetailPageData {
   user: UserRecord;
@@ -17,6 +20,23 @@ export interface CardDetailPageData {
   listings: Listing[];
   sales: Sale[];
   storageLocations: StorageLocation[];
+  mode: PricingMode;
+  marketData: MarketData | null;
+  pricing: PriceResult | null;
+  classification: ClassificationResult | null;
+}
+
+const DECISION_LABEL: Record<string, string> = {
+  SELL_INDIVIDUALLY: 'Sell individually',
+  BULK: 'Bulk',
+  REVIEW: 'Review',
+};
+
+function decisionBadge(decision: string | undefined): string {
+  if (!decision) return statusBadge('—', 'neutral');
+  const tone: BadgeTone =
+    decision === 'SELL_INDIVIDUALLY' ? 'success' : decision === 'BULK' ? 'neutral' : 'warning';
+  return statusBadge(DECISION_LABEL[decision] ?? decision, tone);
 }
 
 function money(v: number | null | undefined): string {
@@ -74,6 +94,61 @@ function statusSelect(current: string): string {
     (s) => `<option value="${escapeHtml(s)}"${s === current ? ' selected' : ''}>${escapeHtml(s)}</option>`,
   ).join('');
   return `<select data-status-select aria-label="Change status">${opts}</select>`;
+}
+
+function conditionSelect(current: string): string {
+  const opts = strategyFor('pokemon')
+    .conditionOptions()
+    .map(
+      (c) => `<option value="${escapeHtml(c.code)}"${c.code === current ? ' selected' : ''}>${escapeHtml(c.label)} (${escapeHtml(c.code)})</option>`,
+    )
+    .join('');
+  return `<select data-price-condition aria-label="Condition for pricing">${opts}</select>`;
+}
+
+function modeSelect(current: PricingMode): string {
+  const opts = PRICING_MODES.map(
+    (m) => `<option value="${escapeHtml(m)}"${m === current ? ' selected' : ''}>${escapeHtml(PRICING_MODE_LABELS[m])}</option>`,
+  ).join('');
+  return `<select data-price-mode aria-label="Pricing mode">${opts}</select>`;
+}
+
+/** The section-15 price panel. Values carry data hooks for live recompute. */
+function pricePanel(data: CardDetailPageData): string {
+  const { pricing, marketData } = data;
+  if (!data.row.card_id) {
+    return `<p class="muted">Link this item to a card to see pricing.</p>`;
+  }
+  if (!pricing) {
+    return `<p class="muted">No market data available for this card yet.</p>`;
+  }
+  const comp = marketData ? String(marketData.competitionCount) : '—';
+  return `<div class="price-controls">
+    <label class="inline-field"><span>Condition</span>${conditionSelect(data.row.condition)}</label>
+    <label class="inline-field"><span>Mode</span>${modeSelect(data.mode)}</label>
+  </div>
+  <div class="price-panel value-cards" data-price-panel>
+    <div class="value-card"><div class="value-label">Market</div><div class="value-amount" data-price-market>${escapeHtml(money(pricing.marketPrice))}</div><div class="value-hint">${escapeHtml(`${comp} comparable listings`)}</div></div>
+    <div class="value-card"><div class="value-label">Recommended listing</div><div class="value-amount" data-price-suggested>${escapeHtml(money(pricing.suggestedPrice))}</div><div class="value-hint">at your ${escapeHtml(PRICING_MODE_LABELS[pricing.mode])} mode</div></div>
+    <div class="value-card"><div class="value-label">Estimated fees</div><div class="value-amount" data-price-fees>${escapeHtml(money(pricing.estimatedFees))}</div><div class="value-hint">marketplace fees</div></div>
+    <div class="value-card"><div class="value-label">Estimated shipping</div><div class="value-amount" data-price-shipping>${escapeHtml(money(pricing.estimatedShipping))}</div><div class="value-hint">seller pays</div></div>
+    <div class="value-card"><div class="value-label">Estimated net</div><div class="value-amount" data-price-net>${escapeHtml(money(pricing.estimatedNet))}</div><div class="value-hint">after fees + shipping</div></div>
+  </div>`;
+}
+
+/** The section-10 recommendation card (decision badge + explanation). */
+function recommendationCard(data: CardDetailPageData): string {
+  const c = data.classification;
+  if (!c) {
+    return `<p class="muted">A recommendation appears once pricing data is available.</p>`;
+  }
+  return `<div class="recommendation-card" data-recommendation>
+    <div class="recommendation-head">
+      <span data-decision-badge>${decisionBadge(c.decision)}</span>
+      <span class="recommendation-score">Score ${escapeHtml(String(Math.round(c.score)))}/100</span>
+    </div>
+    <p class="recommendation-reason" data-recommendation-reason>${escapeHtml(c.reason)}</p>
+  </div>`;
 }
 
 export function renderCardDetailPage(data: CardDetailPageData): string {
@@ -156,7 +231,7 @@ export function renderCardDetailPage(data: CardDetailPageData): string {
   <div class="page-actions">${statusBadge(row.status, statusTone(row.status))}</div>
 </section>
 
-<div class="detail-grid" data-card-detail data-inventory-id="${escapeHtml(row.id)}">
+<div class="detail-grid" data-card-detail data-inventory-id="${escapeHtml(row.id)}" data-card-id="${escapeHtml(row.card_id ?? '')}">
   <section class="panel detail-media">
     ${cardThumb(row.card_image_url, title, 'lg')}
   </section>
@@ -177,6 +252,16 @@ export function renderCardDetailPage(data: CardDetailPageData): string {
     <dl class="info-list">${infoRows}</dl>
   </section>
 </div>
+
+<section class="panel">
+  <div class="panel-header"><h2>Pricing</h2></div>
+  ${pricePanel(data)}
+</section>
+
+<section class="panel">
+  <div class="panel-header"><h2>Recommendation</h2></div>
+  ${recommendationCard(data)}
+</section>
 
 <section class="panel">
   <div class="panel-header"><h2>Price history</h2></div>
